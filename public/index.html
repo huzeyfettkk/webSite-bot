@@ -203,6 +203,7 @@ tr:hover td{background:#f8faff}
 .sehirOneriBox{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1.5px solid var(--accent);border-radius:10px;box-shadow:var(--shadow-md);z-index:100;max-height:220px;overflow-y:auto}
 .sehirOneriItem{padding:10px 14px;cursor:pointer;font-size:14px;transition:background .1s}
 .sehirOneriItem:hover,.sehirOneriItem.aktif{background:var(--accent);color:white}
+.sehirOneriItem.eklenmis{opacity:.5;cursor:default}
 .searchInputWrap{position:relative;flex:1}
 
 /* PWA Install Banner */
@@ -697,9 +698,10 @@ async function loadIlanlar(s1,s2){
   if(s1){url+='?sehir1='+encodeURIComponent(s1);if(s2)url+='&sehir2='+encodeURIComponent(s2);}
   const data=await api(url);if(!data)return;
   const ilanlar=data.ilanlar||data;
-  // matchedTerms: server'dan gelen + arama etiketlerinin kendisi
-  const matchedTerms=[...(data.matchedTerms||[]),...searchTags].filter(Boolean);
   if(data.hata){document.getElementById('ilanCountNum').textContent='0';document.getElementById('ilanList').innerHTML='<div class="emptyState"><div class="emptyIcon">🔍</div><p>'+esc(data.hata)+'</p></div>';return;}
+  // matchedTerms: server'dan gelen (il + tüm ilçeler) + arama etiketleri — benzersiz
+  const allTerms = new Set([...(data.matchedTerms||[]),...searchTags].map(t=>t.toLowerCase()).filter(Boolean));
+  const matchedTerms = [...allTerms];
   renderIlanlar(ilanlar,matchedTerms);loadStats();
 }
 
@@ -715,25 +717,41 @@ function renderIlanlar(ilanlar,matchedTerms=[]){
         <span class="ilanTime">⏱ ${timeAgo(ilan.timestamp)}</span>
       </div>
       <div class="ilanText">${hlText(ilan.text,matchedTerms)}</div>
-      ${(ilan.cities||[]).length?`<div class="ilanSehirler">${ilan.cities.map(c=>`<span class="sehirTag">${esc(c)}</span>`).join('')}</div>`:''}
+      ${(ilan.cities||[]).length?`<div class="ilanSehirler">${ilan.cities.map(c=>`<span class="sehirTag">${esc(formatSehir(c))}</span>`).join('')}</div>`:''}
     </div>`).join('');
 }
 
-function hlText(text,terms){
-  let s=esc(text);
+function hlText(text, terms){
+  if(!terms || !terms.length) return esc(text);
+  // Türkçe karakter varyantlarını oluştur
+  function trVaryant(s){
+    return s
+      .replace(/i/g,'[iİ]').replace(/ı/g,'[ıI]')
+      .replace(/g/g,'[gğG]').replace(/u/g,'[uüU]')
+      .replace(/s/g,'[sşS]').replace(/o/g,'[oöO]')
+      .replace(/c/g,'[cçC]');
+  }
+  let result = esc(text);
   // Önce telefon numaralarını tıklanabilir yap
-  s=s.replace(/(\+?[\d][\d\s\-().]{7,}[\d])/g,(m)=>{
+  result = result.replace(/(\+?[\d][\d\s\-().]{7,}[\d])/g,(m)=>{
     const clean=m.replace(/[\s\-().]/g,'');
     if(clean.length<10||clean.length>15)return m;
     return '<a href="tel:'+clean+'" class="telLink">'+m+'</a>';
   });
-  // Sonra şehirleri vurgula
+  // Şehirleri uzundan kısaya sırala (önce uzun eşleşmeler)
   const sorted=[...terms].filter(Boolean).sort((a,b)=>b.length-a.length);
-  sorted.forEach(c=>{
-    const re=new RegExp('(?![^<]*>)('+c.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
-    s=s.replace(re,'<span class="hl">$1</span>');
+  sorted.forEach(term=>{
+    try{
+      const pattern = trVaryant(term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+      const re = new RegExp('(?<![a-zA-ZğüşıöçĞÜŞİÖÇ])(' + pattern + ')(?![a-zA-ZğüşıöçĞÜŞİÖÇ])', 'gi');
+      result = result.replace(re, (match, p1) => {
+        // Zaten highlight içindeyse tekrar sarma
+        if(match.includes('class="hl"')) return match;
+        return '<span class="hl">'+p1+'</span>';
+      });
+    }catch(e){}
   });
-  return s;
+  return result;
 }
 
 function updateCharCount(){
@@ -770,95 +788,180 @@ function timeAgo(ts){
   const h=Math.floor(d/3600),m=Math.floor((d%3600)/60);return m>0?h+' sa '+m+' dk önce':h+' sa önce';
 }
 
-// ── Etiket tabanlı arama ────────────────────────
-let searchTags = []; // max 2 şehir
+// ── Arama — Etiket Sistemi (Kusursuz Versiyon) ─────────────────
+let searchTags = [];
 let oneriAktifIdx = -1;
 
-function renderSearchTags(){
-  const row = document.getElementById('searchTagRow');
-  if(!row) return;
-  row.innerHTML = searchTags.map((t,i) => `<span class="searchTag">${esc(t.charAt(0).toUpperCase()+t.slice(1))}<button onclick="removeSearchTag(${i})">✕</button></span>`).join('');
-  // Placeholder güncelle
-  const inp = document.getElementById('sehirInput');
-  if(inp) inp.placeholder = searchTags.length===0 ? 'Şehir veya ilçe ekleyin...' : searchTags.length===1 ? 'Varış şehri ekleyin (opsiyonel)...' : '';
-}
-
-function removeSearchTag(i){
-  searchTags.splice(i,1);
-  renderSearchTags();
-  araIlanlar();
-}
-
-function sehirEkle(sehir){
-  if(!sehir || !sehir.trim()) return;
-  const temiz = sehir.trim();
-  // Aynı şehir eklenmişse atla
-  if(searchTags.map(s=>s.toLowerCase()).includes(temiz.toLowerCase())) {
-    document.getElementById('sehirInput').value='';
-    document.getElementById('sehirOneriBox').style.display='none';
-    return;
-  }
-  // Max 2 — ikincisi varsa değiştir
-  if(searchTags.length >= 2){ searchTags[1] = temiz; }
-  else { searchTags.push(temiz); }
-  renderSearchTags();
-  const inp = document.getElementById('sehirInput');
-  if(inp) inp.value = '';
-  document.getElementById('sehirOneriBox').style.display='none';
-  araIlanlar();
-}
-
-function sehirKeydown(e){
-  const box = document.getElementById('sehirOneriBox');
-  const items = box.querySelectorAll('.sehirOneriItem');
-  if(e.key==='ArrowDown'){e.preventDefault();oneriAktifIdx=Math.min(oneriAktifIdx+1,items.length-1);items.forEach((el,i)=>el.classList.toggle('aktif',i===oneriAktifIdx));}
-  else if(e.key==='ArrowUp'){e.preventDefault();oneriAktifIdx=Math.max(oneriAktifIdx-1,0);items.forEach((el,i)=>el.classList.toggle('aktif',i===oneriAktifIdx));}
-  else if(e.key==='Enter'){
-    e.preventDefault();
-    if(oneriAktifIdx>=0 && items[oneriAktifIdx]){ sehirEkle(items[oneriAktifIdx].dataset.val); oneriAktifIdx=-1; }
-    else{
-      const val=document.getElementById('sehirInput').value.trim();
-      if(val) sehirEkle(val);
-    }
-  }
-  else if(e.key==='Backspace' && document.getElementById('sehirInput').value==='' && searchTags.length>0){
-    searchTags.pop(); renderSearchTags(); araIlanlar();
-  }
-  else if(e.key==='Escape'){ box.style.display='none'; oneriAktifIdx=-1; }
-}
-
-function sehirOneri(){
-  const val = document.getElementById('sehirInput').value.trim();
-  const box = document.getElementById('sehirOneriBox');
-  if(!val || val.length < 2){ box.style.display='none'; return; }
-  const norm = s => s
+// Evrensel Türkçe normalize — her yerden çağrılabilir
+function normTR(s){
+  return String(s||'')
     .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
     .replace(/Ğ/g,'g').replace(/ğ/g,'g')
     .replace(/Ü/g,'u').replace(/ü/g,'u')
     .replace(/Ş/g,'s').replace(/ş/g,'s')
     .replace(/Ö/g,'o').replace(/ö/g,'o')
     .replace(/Ç/g,'c').replace(/ç/g,'c')
-    .toLowerCase();
-  const nval = norm(val);
-  const tumSehirler = (window._tumSehirler||[]);
-  const eslesme = tumSehirler.filter(s=>norm(s).startsWith(nval)).slice(0,8);
-  if(!eslesme.length){ box.style.display='none'; return; }
-  oneriAktifIdx = -1;
-  box.innerHTML = eslesme.map(s=>`<div class="sehirOneriItem" data-val="${esc(s)}" onmousedown="sehirEkle('${esc(s)}')">${esc(s.charAt(0).toUpperCase()+s.slice(1))}</div>`).join('');
-  box.style.display='block';
+    .toLowerCase().trim();
 }
 
-document.addEventListener('click', e=>{
-  if(!e.target.closest('.searchInputWrap')) document.getElementById('sehirOneriBox').style.display='none';
+// Etiketi güzel formatla (her kelimenin ilk harfi büyük)
+function formatSehir(s){
+  return s.split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+}
+
+function renderSearchTags(){
+  const row = document.getElementById('searchTagRow');
+  if(!row) return;
+  row.innerHTML = searchTags.map((t,i) => 
+    `<span class="searchTag">${esc(formatSehir(t))}<button onclick="removeSearchTag(${i})" title="Kaldır">✕</button></span>`
+  ).join('');
+  const inp = document.getElementById('sehirInput');
+  if(!inp) return;
+  if(searchTags.length === 0)       inp.placeholder = 'Kalkış şehri veya ilçesi yazın...';
+  else if(searchTags.length === 1)  inp.placeholder = 'Varış şehri ekleyin (opsiyonel)...';
+  else                              inp.placeholder = '';
+  // Max 2 varsa input'u devre dışı bırak
+  inp.disabled = searchTags.length >= 2;
+  if(inp.disabled){ inp.placeholder=''; }
+}
+
+function removeSearchTag(i){
+  searchTags.splice(i, 1);
+  renderSearchTags();
+  const inp = document.getElementById('sehirInput');
+  if(inp){ inp.disabled = false; inp.focus(); }
+  araIlanlar();
+}
+
+function sehirEkle(sehir){
+  if(!sehir) return;
+  const temiz = sehir.trim();
+  if(!temiz) return;
+  // Zaten eklenmiş mi? (normalize karşılaştırma)
+  if(searchTags.some(s => normTR(s) === normTR(temiz))){
+    const inp = document.getElementById('sehirInput');
+    if(inp) inp.value = '';
+    document.getElementById('sehirOneriBox').style.display = 'none';
+    return;
+  }
+  // Max 2
+  if(searchTags.length >= 2) searchTags[1] = temiz;
+  else searchTags.push(temiz);
+  renderSearchTags();
+  const inp = document.getElementById('sehirInput');
+  if(inp) inp.value = '';
+  document.getElementById('sehirOneriBox').style.display = 'none';
+  oneriAktifIdx = -1;
+  araIlanlar();
+}
+
+function sehirKeydown(e){
+  const box = document.getElementById('sehirOneriBox');
+  const items = box ? box.querySelectorAll('.sehirOneriItem') : [];
+  const boxAcik = box && box.style.display !== 'none' && items.length > 0;
+
+  if(e.key === 'ArrowDown'){
+    e.preventDefault();
+    if(!boxAcik) return;
+    oneriAktifIdx = Math.min(oneriAktifIdx + 1, items.length - 1);
+    items.forEach((el,i) => el.classList.toggle('aktif', i === oneriAktifIdx));
+    // Scroll ile görünür tut
+    if(items[oneriAktifIdx]) items[oneriAktifIdx].scrollIntoView({ block:'nearest' });
+  }
+  else if(e.key === 'ArrowUp'){
+    e.preventDefault();
+    if(!boxAcik) return;
+    oneriAktifIdx = Math.max(oneriAktifIdx - 1, 0);
+    items.forEach((el,i) => el.classList.toggle('aktif', i === oneriAktifIdx));
+    if(items[oneriAktifIdx]) items[oneriAktifIdx].scrollIntoView({ block:'nearest' });
+  }
+  else if(e.key === 'Enter'){
+    e.preventDefault();
+    if(boxAcik && oneriAktifIdx >= 0 && items[oneriAktifIdx]){
+      sehirEkle(items[oneriAktifIdx].dataset.val);
+      oneriAktifIdx = -1;
+    } else {
+      const val = document.getElementById('sehirInput').value.trim();
+      if(val){
+        // Geçerli bir şehir mi? Listede ara
+        const eslesen = (window._tumSehirler||[]).find(s => normTR(s) === normTR(val));
+        if(eslesen) sehirEkle(eslesen);
+        else if(val.length >= 2) sehirEkle(val); // Listede yoksa yine de ekle, server validate eder
+      } else {
+        araIlanlar(); // Boşsa direkt ara
+      }
+    }
+  }
+  else if(e.key === 'Backspace'){
+    const val = document.getElementById('sehirInput').value;
+    if(val === '' && searchTags.length > 0){
+      searchTags.pop();
+      renderSearchTags();
+      araIlanlar();
+    }
+  }
+  else if(e.key === 'Escape'){
+    if(box) box.style.display = 'none';
+    oneriAktifIdx = -1;
+  }
+}
+
+function sehirOneri(){
+  const inp = document.getElementById('sehirInput');
+  const box = document.getElementById('sehirOneriBox');
+  if(!inp || !box) return;
+  const val = inp.value.trim();
+  if(!val || val.length < 1){ box.style.display = 'none'; return; }
+  const nval = normTR(val);
+  const tumSehirler = window._tumSehirler || [];
+  // Önce tam eşleşme/başlangıç, sonra içeren
+  const baslayan = tumSehirler.filter(s => normTR(s).startsWith(nval));
+  const iceren   = tumSehirler.filter(s => !normTR(s).startsWith(nval) && normTR(s).includes(nval));
+  const eslesme  = [...baslayan, ...iceren].slice(0, 10);
+  if(!eslesme.length){ box.style.display = 'none'; return; }
+  oneriAktifIdx = -1;
+  // Zaten eklenmiş olanları işaretle
+  const eklenmisler = new Set(searchTags.map(normTR));
+  box.innerHTML = eslesme.map(s => {
+    const eklenmis = eklenmisler.has(normTR(s));
+    return `<div class="sehirOneriItem${eklenmis?' eklenmis':''}" data-val="${esc(s)}" onmousedown="event.preventDefault();sehirEkle('${esc(s)}')">${esc(formatSehir(s))}${eklenmis?' <span style=\'opacity:.5;font-size:11px\'>(eklendi)</span>':''}</div>`;
+  }).join('');
+  box.style.display = 'block';
+}
+
+// Öneri kutusu dışına tıklayınca kapat
+document.addEventListener('click', e => {
+  if(!e.target.closest('.searchInputWrap') && !e.target.closest('.searchTag')){
+    const box = document.getElementById('sehirOneriBox');
+    if(box) box.style.display = 'none';
+    oneriAktifIdx = -1;
+  }
 });
 
 function araIlanlar(){
-  const s1=searchTags[0]||undefined, s2=searchTags[1]||undefined;
-  lastSearch={s1:s1||'',s2:s2||''};
-  loadIlanlar(s1,s2);
+  const s1 = searchTags[0] || undefined;
+  const s2 = searchTags[1] || undefined;
+  lastSearch = { s1: s1||'', s2: s2||'' };
+  loadIlanlar(s1, s2);
 }
-function resetArama(){searchTags=[];renderSearchTags();lastSearch={s1:'',s2:''};const inp=document.getElementById('sehirInput');if(inp)inp.value='';loadIlanlar();}
-function toggleLive(){isLive=!isLive;document.getElementById('liveBtn').classList.toggle('active',isLive);if(isLive)liveInterval=setInterval(()=>loadIlanlar(lastSearch.s1||undefined,lastSearch.s2||undefined),15000);else clearInterval(liveInterval);}
+
+function resetArama(){
+  searchTags = [];
+  renderSearchTags();
+  lastSearch = { s1:'', s2:'' };
+  const inp = document.getElementById('sehirInput');
+  if(inp){ inp.value = ''; inp.disabled = false; inp.focus(); }
+  const box = document.getElementById('sehirOneriBox');
+  if(box) box.style.display = 'none';
+  loadIlanlar();
+}
+
+function toggleLive(){
+  isLive = !isLive;
+  document.getElementById('liveBtn').classList.toggle('active', isLive);
+  if(isLive) liveInterval = setInterval(() => loadIlanlar(lastSearch.s1||undefined, lastSearch.s2||undefined), 15000);
+  else clearInterval(liveInterval);
+}
 
 window.addEventListener('resize',()=>{
   const hb=document.getElementById('hamburger');

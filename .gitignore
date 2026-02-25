@@ -1,0 +1,7 @@
+.env
+node_modules/
+yuklegit.db
+yuklegit.db-shm
+yuklegit.db-wal
+.wwebjs_auth/
+*.log

@@ -88,11 +88,11 @@ const IL_ILCE = {
   'zonguldak':      ['alaplı','çaycuma','devrek','ere','gökçebey','kilimli','kozlu'],
 };
 
-const normStr = s => s.toLowerCase()
-  .replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ş/g,'s')
-  .replace(/ı/g,'i').replace(/ö/g,'o').replace(/ç/g,'c')
-  .replace(/İ/g,'i').replace(/Ğ/g,'g').replace(/Ü/g,'u')
-  .replace(/Ş/g,'s').replace(/Ö/g,'o').replace(/Ç/g,'c').trim();
+const normStr = s => s
+  .replace(/İ/g,'i').replace(/I/g,'i')
+  .replace(/Ğ/g,'g').replace(/Ü/g,'u').replace(/Ş/g,'s').replace(/Ö/g,'o').replace(/Ç/g,'c')
+  .replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ş/g,'s').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ç/g,'c')
+  .toLowerCase().trim();
 
 /**
  * Verilen şehir/il adının hangi ile ait olduğunu döndürür.

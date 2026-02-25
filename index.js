@@ -1,3 +1,4 @@
+require('dotenv').config();
 /**
  * WhatsApp Lojistik Takip ve Arama Botu
  * whatsapp-web.js kullanarak yazılmıştır.
@@ -195,8 +196,28 @@ function containsPhone(text) {
 }
 
 function extractCities(text) {
-  const norm = ' ' + normalize(text) + ' ';
-  return CONFIG.CITIES.filter(c => norm.includes(' ' + normalize(c) + ' '));
+  const normText = normalize(text);
+  // Her şehrin metindeki ilk geçiş pozisyonunu bul, sıraya göre döndür
+  const found = [];
+  for (const c of CONFIG.CITIES) {
+    const nc = normalize(c);
+    // Kelime sınırı kontrolü: önünde ve arkasında harf/rakam olmamalı
+    const re = new RegExp('(?<![a-z0-9])' + nc.replace(/[-]/g,'\\-') + '(?![a-z0-9])');
+    const m = normText.match(re);
+    if (m) {
+      const pos = normText.indexOf(nc);
+      found.push({ city: c, pos });
+    }
+  }
+  // Pozisyona göre sırala, aynı şehri tekrar ekleme
+  found.sort((a, b) => a.pos - b.pos);
+  const seen = new Set();
+  return found.filter(({ city }) => {
+    const nc = normalize(city);
+    if (seen.has(nc)) return false;
+    seen.add(nc);
+    return true;
+  }).map(({ city }) => city);
 }
 
 // Kara liste: normalize sonrası substring kontrolü
@@ -295,6 +316,11 @@ class IlanStore {
     this._store.set(id, { ...data, timestamp: data.timestamp || Date.now(), _hash: h });
   }
 
+  // Ham sonuç döndür (server.js'de DB ile birleştirmek için)
+  searchRaw(city1, city2) {
+    return this.search(city1, city2);
+  }
+
   search(city1, city2) {
     const c1 = normalize(city1);
     const c2 = city2 ? normalize(city2) : null;
@@ -388,18 +414,83 @@ client.on('message_create', async (msg) => {
 
     // ── Özel sohbet: arama ──
     if (!chat.isGroup) {
-      // Sadece bize gelen mesajlara cevap ver, kendi gönderdiğimize değil
       if (msg.fromMe) return;
 
-      const parts = body.trim().split(/\s+/);
-      const known = parts.filter(p => CONFIG.CITIES.some(c => normalize(c) === normalize(p)));
-      if (known.length === 0 || parts.length > 2) return;
+      const raw = body.trim();
 
-      const [city1, city2] = parts;
-      const searchCities   = parts.filter(p => known.map(normalize).includes(normalize(p)));
-      const results        = store.search(city1, city2 || null);
-      await msg.reply(formatResults(results, searchCities));
-      console.log(`🔍 "${parts.join(' → ')}" | ${results.length} sonuç`);
+      // ── Doğal dil şehir çıkarıcı ──────────────────────────────
+      // "istanbul samsun", "istanbul'dan samsun'a", "istanbuldan samsuna",
+      // "istanbul - samsun", "istanbul > samsun", "İSTANBUL SAMSUN" hepsini anlar
+      function sehirCikar(metin) {
+        // 1. Normalize: Türkçe harf + küçük harf + özel karakterleri boşluğa çevir
+        const temiz = normalize(metin)
+          .replace(/dan\b/g, ' ').replace(/den\b/g, ' ')
+          .replace(/a\b/g, ' ').replace(/e\b/g, ' ')
+          .replace(/[-_>→|\/\\]/g, ' ')
+          .replace(/\s+/g, ' ').trim();
+
+        const kelimeler = temiz.split(' ').filter(Boolean);
+
+        // 2. Tek kelime ve çok kelimeli şehir isimlerini bul (en uzundan başla)
+        const bulunanlar = [];
+        const kullanildi = new Set();
+
+        // Önce 2 kelimeli eşleşmeleri dene (kahramanmaraş gibi birleşik geçebilir)
+        for (let i = 0; i < kelimeler.length - 1; i++) {
+          if (kullanildi.has(i) || kullanildi.has(i+1)) continue;
+          const ikili = kelimeler[i] + ' ' + kelimeler[i+1];
+          const eslesen = CONFIG.CITIES.find(c => normalize(c) === ikili);
+          if (eslesen) {
+            bulunanlar.push({ sehir: eslesen, pos: i });
+            kullanildi.add(i); kullanildi.add(i+1);
+          }
+        }
+
+        // Sonra tek kelimeli eşleşmeler
+        for (let i = 0; i < kelimeler.length; i++) {
+          if (kullanildi.has(i)) continue;
+          const eslesen = CONFIG.CITIES.find(c => normalize(c) === kelimeler[i]);
+          if (eslesen) {
+            bulunanlar.push({ sehir: eslesen, pos: i });
+            kullanildi.add(i);
+          }
+        }
+
+        // Pozisyona göre sırala (metindeki geçiş sırasını koru)
+        bulunanlar.sort((a, b) => a.pos - b.pos);
+        return bulunanlar.map(b => b.sehir);
+      }
+
+      const sehirler = sehirCikar(raw);
+
+      if (sehirler.length === 0) {
+        // Hiç şehir bulunamadı — yardım mesajı gönder
+        await msg.reply(
+          '🤖 *YükleGit Arama Botu*\n\n' +
+          'Şehir adı yazarak arama yapabilirsiniz:\n\n' +
+          '▸ Tek şehir: `samsun`\n' +
+          '▸ Güzergah: `istanbul samsun`\n' +
+          '▸ Doğal dil: `istanbuldan samsuna`\n\n' +
+          '_Son 1 saatteki ilanlar gösterilir._'
+        );
+        return;
+      }
+
+      const city1 = sehirler[0];
+      const city2 = sehirler[1] || null;
+      const results = store.search(city1, city2);
+
+      // Sonuç sayısını da belirt
+      const baslik = city2
+        ? `🔍 *${city1.toUpperCase()} → ${city2.toUpperCase()}* araması`
+        : `🔍 *${city1.toUpperCase()}* araması`;
+      const sonucSayisi = `📦 ${results.length} ilan bulundu\n${'─'.repeat(30)}\n\n`;
+
+      await msg.reply(baslik + '\n' + sonucSayisi + formatResults(results, sehirler).replace(/^❌.*/, ''));
+      if (results.length === 0) {
+        await msg.reply('❌ Aradığınız kriterlere uygun aktif ilan bulunamadı.\n_(Son 1 saat içindeki ilanlar gösterilir)_');
+      }
+      console.log(`🔍 "${city1}${city2?' → '+city2:''}" | ${results.length} sonuç`);
       return;
     }
 

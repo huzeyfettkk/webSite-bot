@@ -1,8 +1,10 @@
+require('dotenv').config();
 /**
  * YükleGit - Web Sunucusu (SQLite entegreli)
  */
 
 const express        = require('express');
+const https          = require('https');
 const { getIlVeIlceleri, getIlBilgisi, IL_ILCE } = require('./il_ilce');
 const jwt            = require('jsonwebtoken');
 const bcrypt         = require('bcryptjs');
@@ -27,6 +29,7 @@ const SECRET = process.env.JWT_SECRET || 'yuklegit-secret-2024';
 const GOOGLE_CLIENT_ID     = '1056139041545-uarcf45oehmrglst9cp2vr8mc2uq7bbm.apps.googleusercontent.com';
 const GOOGLE_CLIENT_SECRET = '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';
 const BASE_URL             = process.env.BASE_URL || 'https://yuklegit.tr';
+const GEMINI_API_KEY       = process.env.GEMINI_API_KEY || '';
 
 const mailer = nodemailer.createTransport({
   service: 'gmail',
@@ -210,36 +213,204 @@ app.post('/api/logout', authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
+
+// ── Gemini AI Arama ─────────────────────────────
+// İlanları Gemini'ye gönderir, düzenli ve anlamlı şekilde döndürür
+app.post('/api/ai-ara', authMiddleware, async (req, res) => {
+  if (!GEMINI_API_KEY) {
+    return res.status(503).json({ error: 'AI özelliği henüz yapılandırılmamış.' });
+  }
+
+  const { soru, ilanlar } = req.body;
+  if (!soru || !ilanlar || !ilanlar.length) {
+    return res.status(400).json({ error: 'Soru ve ilan listesi gerekli.' });
+  }
+
+  // İlanları kısa özet olarak hazırla (token tasarrufu)
+  const ilanOzetleri = ilanlar.slice(0, 30).map((ilan, i) => {
+    const sure = Math.floor((Date.now() - ilan.timestamp) / 60000);
+    return `[${i+1}] ${ilan.text.trim().slice(0, 300)} (${sure} dk önce)`;
+  }).join('\n---\n');
+
+  const prompt = `Sen bir Türk lojistik platformu asistanısın. Görevin kullanıcının isteğine göre aşağıdaki nakliye/yük ilanlarını analiz etmek ve en uygun olanları düzenli bir şekilde sunmak.
+
+KULLANICI İSTEĞİ: "${soru}"
+
+MEVCUT İLANLAR:
+${ilanOzetleri}
+
+GÖREVIN:
+1. Kullanıcının isteğiyle en alakalı ilanları belirle (güzergah, yük tipi, araç tipi vb.)
+2. En uygun ilanları önce göster
+3. Her ilan için kısa bir özet çıkar: nereden-nereye, yük/araç tipi, telefon numarası
+4. Alakasız ilanları gösterme
+5. Türkçe yanıt ver, kısa ve net ol
+
+YANIT FORMATI (JSON):
+{
+  "ozet": "Kullanıcı isteğinin kısa yorumu",
+  "ilanlar": [
+    {
+      "sira": 1,
+      "indeks": 3,
+      "nereden": "İstanbul",
+      "nereye": "Ankara", 
+      "yukTipi": "Kapalı TIR",
+      "telefon": "05xx xxx xx xx",
+      "sure": "15 dk önce",
+      "orijinalMetin": "orijinal ilan metni"
+    }
+  ],
+  "toplamBulunan": 5
+}
+
+Sadece JSON döndür, başka hiçbir şey yazma.`;
+
+  try {
+    const sonuc = await geminiIste(prompt);
+    logEkle({ userId: req.user.id, action: 'ai_search', detail: soru.slice(0, 100), ipAddress: getIP(req) });
+    res.json({ ok: true, sonuc });
+  } catch (err) {
+    console.error('Gemini hatası:', err.message);
+    res.status(500).json({ error: 'AI yanıt vermedi, normal arama kullanılıyor.' });
+  }
+});
+
+// Gemini API çağrısı
+function geminiIste(prompt) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.1,      // Düşük — tutarlı yanıtlar
+        maxOutputTokens: 2048,
+        responseMimeType: 'application/json'
+      }
+    });
+
+    const options = {
+      hostname: 'generativelanguage.googleapis.com',
+      path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+
+    const request = https.request(options, (response) => {
+      let data = '';
+      response.on('data', chunk => data += chunk);
+      response.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) return reject(new Error(parsed.error.message));
+          const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!text) return reject(new Error('Boş yanıt'));
+          // JSON parse
+          const temiz = text.replace(/```json\n?|```/g, '').trim();
+          resolve(JSON.parse(temiz));
+        } catch (e) {
+          reject(new Error('JSON parse hatası: ' + e.message));
+        }
+      });
+    });
+
+    request.on('error', reject);
+    request.setTimeout(15000, () => { request.destroy(); reject(new Error('Zaman aşımı')); });
+    request.write(body);
+    request.end();
+  });
+}
+
 // ── İlan Rotaları ───────────────────────────────
 let _store = null, _config = null;
 function setStore(store, config) { _store = store; _config = config; }
+
+// Normalize — server tarafında tek merkezi fonksiyon
+const normS = s => String(s||'')
+  .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
+  .replace(/Ğ/g,'g').replace(/ğ/g,'g')
+  .replace(/Ü/g,'u').replace(/ü/g,'u')
+  .replace(/Ş/g,'s').replace(/ş/g,'s')
+  .replace(/Ö/g,'o').replace(/ö/g,'o')
+  .replace(/Ç/g,'c').replace(/ç/g,'c')
+  .toLowerCase().trim();
+
+// Şehri normalize edilmiş olarak CITIES listesinde bul
+function sehirBul(input) {
+  if (!input) return null;
+  const ni = normS(input);
+  // Önce tam eşleşme
+  const tam = _config?.CITIES?.find(c => normS(c) === ni);
+  if (tam) return tam;
+  // il_ilce'de de ara
+  const ilBilgi = getIlBilgisi(input);
+  if (ilBilgi.il !== null) return ilBilgi.il;
+  // İlçe olarak bul
+  for (const [il, ilceler] of Object.entries(IL_ILCE)) {
+    const bulunan = ilceler.find(i => normS(i) === ni);
+    if (bulunan) return bulunan;
+  }
+  return null;
+}
 
 app.get('/api/ilanlar', authMiddleware, (req, res) => {
   const { sehir1, sehir2 } = req.query;
   let matchedTerms = [];
 
   if (sehir1) {
-    const norm = s => s
-      .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
-      .replace(/Ğ/g,'g').replace(/ğ/g,'g')
-      .replace(/Ü/g,'u').replace(/ü/g,'u')
-      .replace(/Ş/g,'s').replace(/ş/g,'s')
-      .replace(/Ö/g,'o').replace(/ö/g,'o')
-      .replace(/Ç/g,'c').replace(/ç/g,'c')
-      .toLowerCase();
-    const gecerliMi = s => {
-      if (!s) return false;
-      if (getIlBilgisi(s).il !== null) return true;
-      return _config?.CITIES?.some(c => norm(c) === norm(s)) || false;
-    };
-    if (!gecerliMi(sehir1)) return res.json({ ilanlar: [], matchedTerms: [], hata: 'Geçerli bir şehir veya ilçe adı girin' });
-    if (sehir2 && !gecerliMi(sehir2)) return res.json({ ilanlar: [], matchedTerms: [], hata: 'Geçerli bir şehir veya ilçe adı girin' });
+    // Şehri bul ve normalize et
+    const bulunan1 = sehirBul(sehir1);
+    const bulunan2 = sehir2 ? sehirBul(sehir2) : null;
 
-    logEkle({ userId: req.user.id, action: 'search', detail: sehir2 ? `${sehir1} → ${sehir2}` : sehir1, ipAddress: getIP(req) });
-    matchedTerms = [...getIlVeIlceleri(sehir1), ...(sehir2 ? getIlVeIlceleri(sehir2) : [])];
+    if (!bulunan1) return res.json({ ilanlar: [], matchedTerms: [], hata: `"${sehir1}" geçerli bir şehir veya ilçe değil` });
+    if (sehir2 && !bulunan2) return res.json({ ilanlar: [], matchedTerms: [], hata: `"${sehir2}" geçerli bir şehir veya ilçe değil` });
+
+    logEkle({ userId: req.user.id, action: 'search', detail: bulunan2 ? `${bulunan1} → ${bulunan2}` : bulunan1, ipAddress: getIP(req) });
+
+    // matchedTerms: il + tüm ilçeleri highlight için
+    matchedTerms = [
+      ...getIlVeIlceleri(bulunan1),
+      ...(bulunan2 ? getIlVeIlceleri(bulunan2) : [])
+    ];
+
+    // ── SORUN 8 ÇÖZÜMÜ: RAM store + SQLite birleştir ──────────────
+    // SQLite'tan sonuçları al (24 saatlik)
+    const dbRows = ilanAra(bulunan1, bulunan2 || null);
+    const dbIlanlar = dbRows.map(r => ({
+      ...r,
+      cities: (() => { try { return JSON.parse(r.cities); } catch { return []; } })(),
+      _kaynak: 'db'
+    }));
+
+    // RAM store'dan sonuçları al (anlık, son 1 saat)
+    const ramIlanlar = _store ? _store.searchRaw(bulunan1, bulunan2 || null).map(i => ({
+      ...i,
+      _kaynak: 'ram'
+    })) : [];
+
+    // İkisini birleştir — hash bazlı duplicate temizle, en yenisi kazanır
+    const hashMap = new Map();
+    // Önce DB ekle
+    for (const ilan of dbIlanlar) {
+      const key = ilan.hash || String(ilan.id);
+      hashMap.set(key, ilan);
+    }
+    // RAM'dakiler daha yeni olabilir, üzerine yaz (aynı hash varsa)
+    for (const ilan of ramIlanlar) {
+      const key = String(ilan._hash || ilan.hash);
+      if (!hashMap.has(key)) hashMap.set(key, ilan);
+    }
+
+    const ilanlar = [...hashMap.values()]
+      .sort((a, b) => b.timestamp - a.timestamp);
+
+    return res.json({ ilanlar, matchedTerms });
   }
 
-  const rows = ilanAra(sehir1 || null, sehir2 || null);
+  // Arama yoksa tüm ilanlar
+  const rows = ilanAra(null, null);
   const ilanlar = rows.map(r => ({ ...r, cities: (() => { try { return JSON.parse(r.cities); } catch { return []; } })() }));
   res.json({ ilanlar, matchedTerms });
 });
