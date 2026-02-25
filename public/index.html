@@ -620,7 +620,7 @@ function initApp(){
   document.getElementById('userNameDisplay').textContent=currentUser.username;
   document.getElementById('userRoleDisplay').textContent=currentUser.role==='admin'?'Admin':'Kullanıcı';
   document.getElementById('userAvatar').textContent=currentUser.username[0].toUpperCase();
-  if(currentUser.role==='admin'){document.getElementById('adminNav').style.display='block';document.getElementById('hareketlerNav').style.display='block';}
+  if(currentUser.role==='admin'){document.getElementById('adminNav').style.display='block';}
   loadStats();loadIlanlar();
   if(bildirimAktif && seciliSehirler.length>0) baslatBildirimKontrol();
   // Bildirim kart durumunu güncelle
@@ -647,9 +647,8 @@ async function api(url,opts={}){
 
 async function loadStats(){
   const d=await api('/api/stats');if(!d)return;
-  document.getElementById('statTotal').textContent=d.total;
-  document.getElementById('statDurum').textContent=d.botDurumu;
-  document.getElementById('statTTL').textContent=d.ttlDakika+' dk';
+  const el=document.getElementById('statTotal');
+  if(el) el.textContent=d.total;
 }
 
 async function loadIlanlar(s1,s2){
