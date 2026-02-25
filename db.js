@@ -117,22 +117,38 @@ function ilanEkle({ hash, text, cities, chatName, chatId, senderPhone, timestamp
  * İlan ara — parametrik sorgular, injection-safe
  */
 function ilanAra(sehir1, sehir2) {
-  const since = Date.now() - 24 * 60 * 60 * 1000; // son 24 saat
+  const since = Date.now() - 24 * 60 * 60 * 1000;
 
   if (!sehir1) {
     return _stmtIlanlarHepsi.all(since);
   }
 
+  const normStr = s => String(s||'')
+    .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
+    .replace(/Ğ/g,'g').replace(/ğ/g,'g')
+    .replace(/Ü/g,'u').replace(/ü/g,'u')
+    .replace(/Ş/g,'s').replace(/ş/g,'s')
+    .replace(/Ö/g,'o').replace(/ö/g,'o')
+    .replace(/Ç/g,'c').replace(/ç/g,'c')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+
+  const n1 = normStr(sehir1);
   const like1 = `%"${sehir1.toLowerCase()}"%`;
   let rows = _stmtIlanSehir1.all(since, like1);
 
   if (sehir2) {
+    const n2 = normStr(sehir2);
     rows = rows.filter(r => {
-      const cities = JSON.parse(r.cities || '[]');
-      const i1 = cities.findIndex(c => c.toLowerCase() === sehir1.toLowerCase());
-      const i2 = cities.findIndex(c => c.toLowerCase() === sehir2.toLowerCase());
-      // Her ikisi de bulunmalı VE sehir1 sehir2'den önce gelmeli
-      return i1 !== -1 && i2 !== -1 && i1 < i2;
+      // Satır bazlı eşleştirme — her satırda c1'den sonra c2 var mı?
+      const satirlar = r.text.split(/[\n\r]+/).map(s => normStr(s));
+      for (const satir of satirlar) {
+        const pos1 = satir.indexOf(n1);
+        const pos2 = satir.indexOf(n2);
+        if (pos1 !== -1 && pos2 !== -1 && pos1 < pos2) return true;
+      }
+      return false;
     });
   }
 

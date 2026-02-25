@@ -197,11 +197,9 @@ function containsPhone(text) {
 
 function extractCities(text) {
   const normText = normalize(text);
-  // Her şehrin metindeki ilk geçiş pozisyonunu bul, sıraya göre döndür
   const found = [];
   for (const c of CONFIG.CITIES) {
     const nc = normalize(c);
-    // Kelime sınırı kontrolü: önünde ve arkasında harf/rakam olmamalı
     const re = new RegExp('(?<![a-z0-9])' + nc.replace(/[-]/g,'\\-') + '(?![a-z0-9])');
     const m = normText.match(re);
     if (m) {
@@ -209,7 +207,6 @@ function extractCities(text) {
       found.push({ city: c, pos });
     }
   }
-  // Pozisyona göre sırala, aynı şehri tekrar ekleme
   found.sort((a, b) => a.pos - b.pos);
   const seen = new Set();
   return found.filter(({ city }) => {
@@ -218,6 +215,35 @@ function extractCities(text) {
     seen.add(nc);
     return true;
   }).map(({ city }) => city);
+}
+
+// Her satırdaki güzergah çiftlerini çıkar — satır bazlı eşleştirme için
+function extractLinePairs(text) {
+  const lines = text.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
+  const pairs = [];
+  for (const line of lines) {
+    const normLine = normalize(line);
+    const lineCities = [];
+    for (const c of CONFIG.CITIES) {
+      const nc = normalize(c);
+      const re = new RegExp('(?<![a-z0-9])' + nc.replace(/[-]/g,'\\-') + '(?![a-z0-9])');
+      const m = normLine.match(re);
+      if (m) {
+        const pos = normLine.indexOf(nc);
+        lineCities.push({ city: c, pos });
+      }
+    }
+    lineCities.sort((a, b) => a.pos - b.pos);
+    const seen = new Set();
+    const unique = lineCities.filter(({ city }) => {
+      const nc = normalize(city);
+      if (seen.has(nc)) return false;
+      seen.add(nc);
+      return true;
+    }).map(({ city }) => city);
+    if (unique.length >= 1) pairs.push(unique);
+  }
+  return pairs; // [[from, to], [from2, to2], ...]
 }
 
 // Kara liste: normalize sonrası substring kontrolü
@@ -330,29 +356,38 @@ class IlanStore {
       let matched = false;
 
       if (!c2) {
-        // Tek şehir: cities listesinde var mı veya metinde geçiyor mu?
-        if (ilan.cities && ilan.cities.some(c => normalize(c) === c1)) {
-          matched = true;
-        } else {
+        // Tek şehir: cities listesinde var mı?
+        matched = (ilan.cities || []).some(c => normalize(c) === c1);
+        if (!matched) {
           const t = ' ' + normalize(ilan.text) + ' ';
           matched = t.includes(' ' + c1 + ' ');
         }
       } else {
-        // İki şehir: cities listesinde sıra doğru mu?
-        if (ilan.cities && ilan.cities.length >= 2) {
-          const i1 = ilan.cities.findIndex(c => normalize(c) === c1);
-          const i2 = ilan.cities.findIndex(c => normalize(c) === c2);
-          if (i1 !== -1 && i2 !== -1 && i1 < i2) {
-            matched = true;
+        // İki şehir: AYNI SATIRDA c1'den sonra c2 geliyor mu?
+        // Önce linePairs kontrolü (en güvenilir)
+        if (ilan.linePairs && ilan.linePairs.length > 0) {
+          for (const pair of ilan.linePairs) {
+            const normPair = pair.map(c => normalize(c));
+            const i1 = normPair.indexOf(c1);
+            const i2 = normPair.indexOf(c2);
+            if (i1 !== -1 && i2 !== -1 && i1 < i2) {
+              matched = true;
+              break;
+            }
           }
         }
 
-        // cities'de bulunamadıysa metin bazlı pozisyon kontrolü
+        // linePairs yoksa (eski ilanlar) satır bazlı metin araması yap
         if (!matched) {
-          const text = normalize(ilan.text);
-          const pos1 = text.indexOf(c1);
-          const pos2 = text.indexOf(c2);
-          matched = pos1 !== -1 && pos2 !== -1 && pos1 < pos2;
+          const lines = ilan.text.split(/[\n\r]+/).map(l => normalize(l));
+          for (const line of lines) {
+            const pos1 = line.indexOf(c1);
+            const pos2 = line.indexOf(c2);
+            if (pos1 !== -1 && pos2 !== -1 && pos1 < pos2) {
+              matched = true;
+              break;
+            }
+          }
         }
       }
 
@@ -497,12 +532,13 @@ client.on('message_create', async (msg) => {
     // ── Grup: ilan kaydet ──
     if (isIlan(body)) {
       const cities    = extractCities(body);
+      const linePairs = extractLinePairs(body); // satır bazlı güzergah çiftleri
       const timestamp = msg.timestamp * 1000;
       const hash      = contentHash(body);
 
       // RAM store (anlık arama için)
       store.add(`${msg.from}_${msg.id.id}`, {
-        text: body, cities,
+        text: body, cities, linePairs,
         chatName:   chat.name || 'Grup',
         chatId:     chat.id._serialized,
         senderName: msg.author || msg.from,
