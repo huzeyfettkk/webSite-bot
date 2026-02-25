@@ -26,7 +26,7 @@ const SECRET = process.env.JWT_SECRET || 'yuklegit-secret-2024';
 
 const GOOGLE_CLIENT_ID     = '1056139041545-uarcf45oehmrglst9cp2vr8mc2uq7bbm.apps.googleusercontent.com';
 const GOOGLE_CLIENT_SECRET = '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';
-const BASE_URL             = process.env.BASE_URL || 'http://localhost:' + (process.env.PORT || 3000);
+const BASE_URL             = process.env.BASE_URL || 'https://yuklegit.tr';
 
 const mailer = nodemailer.createTransport({
   service: 'gmail',
@@ -219,7 +219,14 @@ app.get('/api/ilanlar', authMiddleware, (req, res) => {
   let matchedTerms = [];
 
   if (sehir1) {
-    const norm = s => s.toLowerCase().replace(/[ğüşıöçİ]/g, c => ({'ğ':'g','ü':'u','ş':'s','ı':'i','ö':'o','ç':'c','İ':'i'}[c]||c));
+    const norm = s => s
+      .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
+      .replace(/Ğ/g,'g').replace(/ğ/g,'g')
+      .replace(/Ü/g,'u').replace(/ü/g,'u')
+      .replace(/Ş/g,'s').replace(/ş/g,'s')
+      .replace(/Ö/g,'o').replace(/ö/g,'o')
+      .replace(/Ç/g,'c').replace(/ç/g,'c')
+      .toLowerCase();
     const gecerliMi = s => {
       if (!s) return false;
       if (getIlBilgisi(s).il !== null) return true;

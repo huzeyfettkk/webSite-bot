@@ -11,6 +11,25 @@
   <link rel="apple-touch-icon" href="/icon-192.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>YükleGit — Lojistik İlan Takip</title>
+  <meta name="description" content="YükleGit ile Türkiye genelindeki güncel nakliye ve yük ilanlarını anlık takip edin. Şehir bazlı arama yapın, lojistik fırsatları kaçırmayın.">
+  <meta name="keywords" content="lojistik ilanları, nakliye ilanları, yük ilanları, kamyon ilanları, Türkiye lojistik, taşımacılık ilanları, yüklegit">
+  <meta name="robots" content="index, follow">
+  <meta name="author" content="YükleGit">
+  <link rel="canonical" href="https://yuklegit.tr">
+
+  <!-- Open Graph (Facebook, WhatsApp paylaşım) -->
+  <meta property="og:title" content="YükleGit — Lojistik İlan Takip">
+  <meta property="og:description" content="Türkiye genelindeki güncel nakliye ve yük ilanlarını anlık takip edin.">
+  <meta property="og:url" content="https://yuklegit.tr">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://yuklegit.tr/icon-512.png">
+  <meta property="og:locale" content="tr_TR">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="YükleGit — Lojistik İlan Takip">
+  <meta name="twitter:description" content="Türkiye genelindeki güncel nakliye ve yük ilanlarını anlık takip edin.">
+  <meta name="twitter:image" content="https://yuklegit.tr/icon-512.png">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -171,6 +190,19 @@ tr:hover td{background:#f8faff}
 .profileMsg{font-size:13px;margin-top:10px;padding:8px 12px;border-radius:6px;display:none}
 .profileMsg.ok{background:#f0fdf4;color:var(--success);border:1px solid #bbf7d0}
 .profileMsg.err{background:#fef2f2;color:var(--danger);border:1px solid #fecaca}
+
+/* Arama etiket sistemi */
+.searchTagRow{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:0}
+.searchTagRow:empty{margin-bottom:0}
+.searchTag{display:flex;align-items:center;gap:5px;background:var(--accent);color:white;border-radius:20px;padding:4px 10px 4px 12px;font-size:13px;font-weight:600;animation:fadeUp .15s ease}
+.searchTag .tagRemove{background:rgba(255,255,255,.3);border:none;color:white;border-radius:50%;width:16px;height:16px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;flex-shrink:0}
+.searchTag .tagRemove:hover{background:rgba(255,255,255,.5)}
+.searchTag:first-child::before{content:'';display:none}
+.searchTag:nth-child(2)::before{content:'→';margin-right:2px;opacity:.7;font-size:11px}
+.sehirOneriBox{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1.5px solid var(--accent);border-radius:10px;box-shadow:var(--shadow-md);z-index:100;max-height:200px;overflow-y:auto}
+.sehirOneriItem{padding:10px 14px;cursor:pointer;font-size:14px;transition:background .1s}
+.sehirOneriItem:hover,.sehirOneriItem.aktif{background:var(--accent);color:white}
+.searchInputWrap{position:relative}
 
 /* PWA Install Banner */
 .pwaBanner{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a5fdb,#1048b8);color:white;border-radius:16px;padding:14px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(26,95,219,.35);z-index:9999;max-width:380px;width:calc(100% - 40px);animation:slideUp .4s ease}
@@ -342,7 +374,7 @@ tr:hover td{background:#f8faff}
 
 <div id="app">
   <div class="sidebar" id="sidebar">
-    <div class="sidebarLogo"><div class="logoIcon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v4h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div> YükleGit</div>
+    <div class="sidebarLogo"><img src="/icon-192.png" style="width:32px;height:32px;border-radius:8px;object-fit:cover;flex-shrink:0"> YükleGit</div>
     <div class="navSection">Menü</div>
     <button class="navItem active" onclick="showPage('ilanlar')" id="nav-ilanlar"><span class="icon">📋</span> İlanlar</button>
     <button class="navItem" onclick="showPage('profil')" id="nav-profil"><span class="icon">👤</span> Profilim</button>
@@ -387,9 +419,12 @@ tr:hover td{background:#f8faff}
         </div>
       </div>
       <div class="searchCard">
+        <div class="searchTagRow" id="searchTagRow"></div>
         <div class="searchRow">
-          <input type="text" class="searchInput" id="sehir1" placeholder="Şehir veya ilçe 1">
-          <input type="text" class="searchInput" id="sehir2" placeholder="Şehir veya ilçe 2">
+          <div class="searchInputWrap" style="flex:1;position:relative">
+            <input type="text" class="searchInput" id="sehirInput" placeholder="Şehir veya ilçe yazın, Enter ile ekleyin..." autocomplete="off" oninput="sehirOneri()" onkeydown="sehirKeydown(event)">
+            <div class="sehirOneriBox" id="sehirOneriBox" style="display:none"></div>
+          </div>
           <button class="btnSearch" onclick="araIlanlar()">🔍 Ara</button>
           <button class="btnReset" onclick="resetArama()">Temizle</button>
           <button class="liveBtn" id="liveBtn" onclick="toggleLive()"><div class="liveDot"></div> Canlı</button>
@@ -625,6 +660,8 @@ function initApp(){
   if(bildirimAktif && seciliSehirler.length>0) baslatBildirimKontrol();
   // Bildirim kart durumunu güncelle
   setTimeout(loadProfilBildirim, 300);
+  // Şehir önerileri için listeyi yükle
+  api('/api/sehirler').then(d=>{ if(d&&d.sehirler) window._tumSehirler=d.sehirler; });
 }
 
 function showPage(page){
@@ -671,7 +708,6 @@ function renderIlanlar(ilanlar,matchedTerms=[]){
     <div class="ilanCard">
       <div class="ilanMeta">
         <span class="ilanNum">İlan ${i+1}</span>
-        <span class="ilanGrup">📍 ${esc(ilan.chatName||'Grup')}</span>
         <span class="ilanTime">⏱ ${timeAgo(ilan.timestamp)}</span>
       </div>
       <div class="ilanText">${hlText(ilan.text,matchedTerms)}</div>
@@ -730,10 +766,84 @@ function timeAgo(ts){
   const h=Math.floor(d/3600),m=Math.floor((d%3600)/60);return m>0?h+' sa '+m+' dk önce':h+' sa önce';
 }
 
-function araIlanlar(){const s1=document.getElementById('sehir1').value.trim(),s2=document.getElementById('sehir2').value.trim();lastSearch={s1,s2};loadIlanlar(s1||undefined,s2||undefined);}
-function resetArama(){document.getElementById('sehir1').value='';document.getElementById('sehir2').value='';lastSearch={s1:'',s2:''};loadIlanlar();}
+// ── Etiket tabanlı arama ────────────────────────
+let searchTags = []; // max 2 şehir
+let oneriAktifIdx = -1;
+
+function renderSearchTags(){
+  const row = document.getElementById('searchTagRow');
+  if(!row) return;
+  row.innerHTML = searchTags.map((t,i) => `<div class="searchTag">${i===1?'<span style="opacity:.6;font-size:11px;margin-right:2px">→</span>':''}${esc(t)}<button class="tagRemove" onclick="removeSearchTag(${i})">✕</button></div>`).join('');
+}
+
+function removeSearchTag(i){
+  searchTags.splice(i,1);
+  renderSearchTags();
+  araIlanlar();
+}
+
+function sehirEkle(sehir){
+  if(!sehir) return;
+  if(searchTags.length >= 2){ searchTags[1]=sehir; }
+  else if(!searchTags.includes(sehir)){ searchTags.push(sehir); }
+  renderSearchTags();
+  const inp = document.getElementById('sehirInput');
+  if(inp) inp.value = '';
+  document.getElementById('sehirOneriBox').style.display='none';
+  araIlanlar();
+}
+
+function sehirKeydown(e){
+  const box = document.getElementById('sehirOneriBox');
+  const items = box.querySelectorAll('.sehirOneriItem');
+  if(e.key==='ArrowDown'){e.preventDefault();oneriAktifIdx=Math.min(oneriAktifIdx+1,items.length-1);items.forEach((el,i)=>el.classList.toggle('aktif',i===oneriAktifIdx));}
+  else if(e.key==='ArrowUp'){e.preventDefault();oneriAktifIdx=Math.max(oneriAktifIdx-1,0);items.forEach((el,i)=>el.classList.toggle('aktif',i===oneriAktifIdx));}
+  else if(e.key==='Enter'){
+    e.preventDefault();
+    if(oneriAktifIdx>=0 && items[oneriAktifIdx]){ sehirEkle(items[oneriAktifIdx].dataset.val); oneriAktifIdx=-1; }
+    else{
+      const val=document.getElementById('sehirInput').value.trim();
+      if(val) sehirEkle(val);
+    }
+  }
+  else if(e.key==='Backspace' && document.getElementById('sehirInput').value==='' && searchTags.length>0){
+    searchTags.pop(); renderSearchTags(); araIlanlar();
+  }
+  else if(e.key==='Escape'){ box.style.display='none'; oneriAktifIdx=-1; }
+}
+
+function sehirOneri(){
+  const val = document.getElementById('sehirInput').value.trim();
+  const box = document.getElementById('sehirOneriBox');
+  if(!val || val.length < 2){ box.style.display='none'; return; }
+  const norm = s => s
+    .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
+    .replace(/Ğ/g,'g').replace(/ğ/g,'g')
+    .replace(/Ü/g,'u').replace(/ü/g,'u')
+    .replace(/Ş/g,'s').replace(/ş/g,'s')
+    .replace(/Ö/g,'o').replace(/ö/g,'o')
+    .replace(/Ç/g,'c').replace(/ç/g,'c')
+    .toLowerCase();
+  const nval = norm(val);
+  const tumSehirler = (window._tumSehirler||[]);
+  const eslesme = tumSehirler.filter(s=>norm(s).startsWith(nval)).slice(0,8);
+  if(!eslesme.length){ box.style.display='none'; return; }
+  oneriAktifIdx = -1;
+  box.innerHTML = eslesme.map(s=>`<div class="sehirOneriItem" data-val="${esc(s)}" onmousedown="sehirEkle('${esc(s)}')">${esc(s.charAt(0).toUpperCase()+s.slice(1))}</div>`).join('');
+  box.style.display='block';
+}
+
+document.addEventListener('click', e=>{
+  if(!e.target.closest('.searchInputWrap')) document.getElementById('sehirOneriBox').style.display='none';
+});
+
+function araIlanlar(){
+  const s1=searchTags[0]||undefined, s2=searchTags[1]||undefined;
+  lastSearch={s1:s1||'',s2:s2||''};
+  loadIlanlar(s1,s2);
+}
+function resetArama(){searchTags=[];renderSearchTags();lastSearch={s1:'',s2:''};const inp=document.getElementById('sehirInput');if(inp)inp.value='';loadIlanlar();}
 function toggleLive(){isLive=!isLive;document.getElementById('liveBtn').classList.toggle('active',isLive);if(isLive)liveInterval=setInterval(()=>loadIlanlar(lastSearch.s1||undefined,lastSearch.s2||undefined),15000);else clearInterval(liveInterval);}
-document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('page-ilanlar')?.style.display!=='none')araIlanlar();});
 
 window.addEventListener('resize',()=>{
   const hb=document.getElementById('hamburger');
