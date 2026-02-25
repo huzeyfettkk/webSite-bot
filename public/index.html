@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="theme-color" content="#1a5fdb">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="YükleGit">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>YükleGit — Lojistik İlan Takip</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f0f4fb;--surface:#fff;--border:#dde5f4;--text:#0f1d3a;--muted:#6b7fa3;
+  --accent:#1a5fdb;--accent-h:#1248b3;--success:#059669;--danger:#dc2626;
+  --sidebar:#0f1d3a;--sidebar-t:#7b92c4;
+  --radius:10px;--shadow:0 1px 8px rgba(15,29,58,.07);--shadow-md:0 4px 20px rgba(15,29,58,.10);
+  --sidebar-w:220px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{height:100%}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+/* ── AUTH ── */
+.authWrap{min-height:100vh;display:flex;background:linear-gradient(135deg,#0f1d3a 0%,#1a3a6e 50%,#1a5fdb 100%)}
+.authLeft{flex:1;display:flex;flex-direction:column;justify-content:center;padding:60px;color:white}
+.authBrand{font-family:'Outfit',sans-serif;font-size:36px;font-weight:800;margin-bottom:16px;display:flex;align-items:center;gap:12px}
+.logoIcon{background:var(--accent);width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.authTagline{font-size:16px;opacity:.7;line-height:1.7;max-width:360px}
+.authFeatures{margin-top:40px;display:flex;flex-direction:column;gap:14px}
+.authFeature{display:flex;align-items:center;gap:12px;font-size:14px;opacity:.8}
+.authFeature .dot{width:8px;height:8px;background:#0ea5e9;border-radius:50%;flex-shrink:0}
+.authRight{width:480px;background:var(--surface);display:flex;flex-direction:column;justify-content:center;padding:60px 48px;overflow-y:auto}
+.authTitle{font-family:'Outfit',sans-serif;font-size:26px;font-weight:700;margin-bottom:6px}
+.authSubtitle{font-size:14px;color:var(--muted);margin-bottom:28px}
+.formGroup{margin-bottom:14px}
+.formGroup label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px}
+.formGroup input,.formGroup select{width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:var(--radius);font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;color:var(--text);background:var(--bg);outline:none;transition:border-color .2s,box-shadow .2s}
+.formGroup input:focus,.formGroup select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(26,95,219,.12)}
+.btnPrimary{width:100%;padding:12px;background:var(--accent);color:white;border:none;border-radius:var(--radius);font-family:'Outfit',sans-serif;font-size:15px;font-weight:600;cursor:pointer;margin-top:4px;transition:background .2s;-webkit-appearance:none}
+.btnPrimary:hover{background:var(--accent-h)}
+.authSwitch{margin-top:16px;text-align:center;font-size:13px;color:var(--muted)}
+.authSwitch a{color:var(--accent);font-weight:600;cursor:pointer}
+.authError{background:#fef2f2;border:1px solid #fecaca;color:var(--danger);padding:10px 14px;border-radius:8px;font-size:13px;margin-top:10px;display:none}
+.divider{display:flex;align-items:center;gap:12px;margin:16px 0;color:var(--muted);font-size:12px}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.btnGoogle{width:100%;padding:11px;background:white;border:1.5px solid var(--border);border-radius:var(--radius);font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:background .15s,border-color .15s;color:var(--text);-webkit-appearance:none}
+.btnGoogle:hover{background:#f8faff;border-color:var(--accent)}
+.googleIcon{width:20px;height:20px;flex-shrink:0}
+
+/* ── APP LAYOUT ── */
+#app{display:none;min-height:100vh}
+
+/* Sidebar */
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:var(--sidebar-w);background:var(--sidebar);display:flex;flex-direction:column;z-index:200;transition:transform .25s ease}
+.sidebarLogo{padding:20px 18px 16px;font-family:'Outfit',sans-serif;font-size:19px;font-weight:800;color:white;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:10px}
+.navSection{padding:4px 18px;font-size:10px;font-weight:700;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:1px;margin:6px 0 3px}
+.navItem{display:flex;align-items:center;gap:10px;padding:10px 12px;margin:1px 8px;border-radius:8px;cursor:pointer;font-size:13.5px;font-weight:500;color:var(--sidebar-t);transition:all .15s;border:none;background:none;width:calc(100% - 16px);text-align:left}
+.navItem:hover,.navItem:active{background:rgba(255,255,255,.06);color:white}
+.navItem.active{background:var(--accent);color:white}
+.navItem .icon{width:18px;text-align:center;font-size:15px;flex-shrink:0}
+.sidebarBottom{margin-top:auto;padding:12px;border-top:1px solid rgba(255,255,255,.08)}
+.userBadge{display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;background:rgba(255,255,255,.06);margin-bottom:8px;cursor:pointer;transition:background .15s}
+.userBadge:hover{background:rgba(255,255,255,.10)}
+.userAvatar{width:34px;height:34px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-family:'Outfit',sans-serif;font-size:14px;font-weight:700;flex-shrink:0}
+.userName{font-size:13px;font-weight:600;color:white;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}
+.userRole{font-size:11px;color:var(--sidebar-t)}
+.btnLogout{width:100%;padding:8px;background:rgba(255,255,255,.06);border:none;border-radius:8px;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;color:var(--sidebar-t);cursor:pointer;transition:all .15s}
+.btnLogout:hover{background:rgba(220,38,38,.2);color:#fca5a5}
+
+/* Overlay (mobil) */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150}
+.overlay.show{display:block}
+
+/* Hamburger */
+.hamburger{display:none;position:fixed;top:14px;left:14px;z-index:300;background:var(--sidebar);border:none;border-radius:8px;padding:8px 10px;cursor:pointer;flex-direction:column;gap:4px}
+.hamburger span{display:block;width:20px;height:2px;background:white;border-radius:2px;transition:all .25s}
+
+/* Main */
+.main{margin-left:var(--sidebar-w);padding:28px 28px;min-height:100vh;transition:margin-left .25s}
+.pageHeader{margin-bottom:22px}
+.pageTitle{font-family:'Outfit',sans-serif;font-size:22px;font-weight:700}
+.pageSubtitle{color:var(--muted);font-size:13px;margin-top:3px}
+
+/* Stats */
+.statsGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+.statCard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.statLabel{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px}
+.statValue{font-family:'Outfit',sans-serif;font-size:28px;font-weight:700}
+.statValue.blue{color:var(--accent)}.statValue.green{color:var(--success)}
+
+/* Search */
+.searchCard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow)}
+.searchRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.searchInput{flex:1;min-width:120px;border:1.5px solid var(--border);border-radius:8px;padding:9px 13px;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;background:var(--bg);outline:none;transition:border-color .2s,box-shadow .2s;color:var(--text);-webkit-appearance:none}
+.searchInput:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(26,95,219,.10)}
+.btnSearch{padding:9px 18px;background:var(--accent);color:white;border:none;border-radius:8px;font-family:'Outfit',sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .2s;white-space:nowrap;flex-shrink:0;-webkit-appearance:none}
+.btnSearch:hover,.btnSearch:active{background:var(--accent-h)}
+.btnReset{padding:9px 12px;background:var(--bg);color:var(--muted);border:1.5px solid var(--border);border-radius:8px;font-size:13px;cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0}
+.btnReset:hover{border-color:var(--text);color:var(--text)}
+.liveBtn{display:flex;align-items:center;gap:5px;padding:7px 12px;background:var(--bg);border:1.5px solid var(--border);border-radius:20px;font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0}
+.liveBtn.active{border-color:var(--success);color:var(--success);background:#f0fdf4}
+.liveDot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.liveBtn.active .liveDot{background:var(--success);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* İlanlar */
+.ilanlarBar{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.ilanCount{font-size:13px;color:var(--muted)}
+.ilanCount span{font-weight:600;color:var(--text)}
+.ilanList{display:flex;flex-direction:column;gap:10px}
+.ilanCard{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);animation:fadeUp .25s ease;transition:box-shadow .2s}
+.ilanCard:hover{box-shadow:var(--shadow-md)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.ilanMeta{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.ilanNum{font-family:'Outfit',sans-serif;font-size:11px;font-weight:700;color:white;background:var(--accent);padding:2px 8px;border-radius:4px;flex-shrink:0}
+.ilanGrup{font-size:13px;font-weight:600;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}
+.ilanTime{margin-left:auto;font-size:11px;color:var(--muted);background:var(--bg);padding:3px 9px;border-radius:20px;border:1px solid var(--border);white-space:nowrap;flex-shrink:0}
+.ilanText{font-size:13.5px;line-height:1.75;color:var(--text);white-space:pre-wrap;word-break:break-word}
+.ilanText .hl{background:#dbeafe;color:#1e40af;font-weight:700;padding:0 3px;border-radius:3px}
+.ilanSehirler{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
+.sehirTag{font-size:11px;color:var(--accent);background:#eff6ff;padding:2px 8px;border-radius:20px;border:1px solid #bfdbfe}
+.emptyState{text-align:center;padding:50px 20px;color:var(--muted)}
+.emptyIcon{font-size:44px;margin-bottom:12px}
+
+/* Card/Table */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:18px}
+.cardHeader{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.cardTitle{font-family:'Outfit',sans-serif;font-size:15px;font-weight:700}
+.tableWrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;min-width:500px}
+thead{background:var(--bg)}
+th{padding:10px 16px;text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:12px 16px;font-size:13.5px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f8faff}
+.roleBadge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap}
+.roleBadge.admin{background:#eff6ff;color:var(--accent)}.roleBadge.user{background:#f0fdf4;color:var(--success)}
+.btnSm{padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;white-space:nowrap}
+.btnDanger{background:none;border:1.5px solid #fecaca;color:var(--danger)}
+.btnDanger:hover{background:#fef2f2}
+
+/* Add form */
+.addForm{padding:16px 18px;border-bottom:1px solid var(--border);background:#f8faff}
+.addForm h4{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px}
+.formRow{display:grid;grid-template-columns:1fr 1fr 1fr 110px auto;gap:8px;align-items:end}
+.formRow .formGroup{margin-bottom:0}
+.btnAdd{padding:11px 16px;background:var(--success);color:white;border:none;border-radius:var(--radius);font-family:'Outfit',sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;-webkit-appearance:none}
+.btnAdd:hover{opacity:.88}
+
+/* Kara liste */
+.blGrid{display:flex;flex-wrap:wrap;gap:8px;padding:16px 18px;min-height:50px}
+.blTag{display:flex;align-items:center;gap:8px;background:#fef2f2;border:1px solid #fecaca;color:var(--danger);padding:6px 12px;border-radius:20px;font-size:13px;font-weight:500}
+.blTag button{background:none;border:none;color:var(--danger);cursor:pointer;font-size:17px;line-height:1;opacity:.6}
+.blTag button:hover{opacity:1}
+.blAdd{display:flex;gap:10px;padding:14px 18px;border-top:1px solid var(--border)}
+
+/* Profil */
+.profileGrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.profileCard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.profileHeader{padding:16px 20px;border-bottom:1px solid var(--border);background:#f8faff}
+.profileTitle{font-family:'Outfit',sans-serif;font-size:15px;font-weight:700}
+.profileBody{padding:20px}
+.infoRow{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
+.infoRow:last-child{margin-bottom:0}
+.infoLabel{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.7px}
+.infoValue{font-size:14px;font-weight:500}
+.profileMsg{font-size:13px;margin-top:10px;padding:8px 12px;border-radius:6px;display:none}
+.profileMsg.ok{background:#f0fdf4;color:var(--success);border:1px solid #bbf7d0}
+.profileMsg.err{background:#fef2f2;color:var(--danger);border:1px solid #fecaca}
+
+/* PWA Install Banner */
+.pwaBanner{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a5fdb,#1048b8);color:white;border-radius:16px;padding:14px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(26,95,219,.35);z-index:9999;max-width:380px;width:calc(100% - 40px);animation:slideUp .4s ease}
+@keyframes slideUp{from{transform:translateX(-50%) translateY(100px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
+.pwaBanner .pwaIcon{font-size:28px;flex-shrink:0}
+.pwaBanner .pwaText{flex:1}
+.pwaBanner .pwaTitle{font-weight:700;font-size:14px}
+.pwaBanner .pwaSub{font-size:12px;opacity:.85;margin-top:2px}
+.pwaBanner .pwaBtn{background:white;color:#1a5fdb;border:none;border-radius:10px;padding:8px 16px;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.pwaBanner .pwaClose{background:none;border:none;color:white;font-size:18px;cursor:pointer;opacity:.7;padding:0 0 0 8px;flex-shrink:0}
+
+/* Bildirim ayarları */
+.sehirSecici{display:flex;flex-wrap:wrap;gap:8px;padding:16px 0}
+.sehirChip{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500;border:1.5px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;user-select:none}
+.sehirChip:hover{border-color:var(--accent);color:var(--accent)}
+.sehirChip.aktif{background:#eff6ff;border-color:var(--accent);color:var(--accent);font-weight:700}
+.sehirChip.aktif::before{content:'✓ '}
+.bildirimArama{width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius);font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;background:var(--bg);outline:none;margin-bottom:12px;transition:border-color .2s}
+.bildirimArama:focus{border-color:var(--accent)}
+.bildirimToggle{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);margin-bottom:16px}
+.toggle{position:relative;width:46px;height:26px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggleSlider{position:absolute;cursor:pointer;inset:0;background:#cbd5e1;border-radius:20px;transition:.3s}
+.toggleSlider:before{content:'';position:absolute;width:20px;height:20px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s}
+.toggle input:checked + .toggleSlider{background:var(--accent)}
+.toggle input:checked + .toggleSlider:before{transform:translateX(20px)}
+.toggleLabel{font-size:14px;font-weight:600}
+.toggleSub{font-size:12px;color:var(--muted)}
+
+/* Hareketler tablosu */
+.dataTable{width:100%;border-collapse:collapse;font-size:13px}
+.dataTable th{background:var(--sidebar);color:var(--muted);font-weight:600;padding:10px 12px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+.dataTable td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.dataTable tr:hover td{background:#f8faff}
+.actionBadge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700}
+.actionBadge.login{background:#dcfce7;color:#16a34a}
+.actionBadge.logout{background:#fee2e2;color:#dc2626}
+.actionBadge.search{background:#eff6ff;color:#1a5fdb}
+
+/* Tel linki */
+.telLink{color:var(--accent);font-weight:700;text-decoration:none;white-space:nowrap}
+.telLink:hover{text-decoration:underline}
+
+/* İlan oluştur */
+.ilanForm{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);margin-bottom:20px}
+.ilanFormTitle{font-family:'Outfit',sans-serif;font-size:16px;font-weight:700;margin-bottom:4px}
+.ilanFormSub{font-size:12px;color:var(--muted);margin-bottom:14px}
+.ilanTextarea{width:100%;min-height:120px;border:1.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;color:var(--text);background:var(--bg);outline:none;resize:vertical;transition:border-color .2s;line-height:1.6}
+.ilanTextarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(26,95,219,.10)}
+.ilanFormBottom{display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px}
+.charCount{font-size:12px;color:var(--muted)}
+.charCount.warn{color:var(--danger)}
+.phoneNote{font-size:12px;color:var(--success);background:#f0fdf4;border:1px solid #bbf7d0;padding:4px 10px;border-radius:6px}
+
+/* Loader */
+.loader{display:flex;justify-content:center;padding:40px}
+.spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── MOBİL ── */
+@media(max-width:768px){
+  .authLeft{display:none}
+  .authRight{width:100%;padding:40px 24px;min-height:100vh;justify-content:flex-start;padding-top:60px}
+
+  .hamburger{display:flex}
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0;padding:18px 16px;padding-top:60px}
+
+  .statsGrid{grid-template-columns:1fr 1fr;gap:10px}
+  .statsGrid .statCard:last-child{grid-column:1/-1}
+  .statValue{font-size:24px}
+
+  .searchRow{gap:6px}
+  .searchInput{min-width:0;font-size:16px} /* 16px prevents iOS zoom */
+
+  .ilanCard{padding:14px}
+  .ilanGrup{max-width:140px}
+
+  .profileGrid{grid-template-columns:1fr}
+  .formRow{grid-template-columns:1fr;gap:8px}
+
+  .pageTitle{font-size:20px}
+}
+
+@media(max-width:480px){
+  .searchRow{flex-direction:column;align-items:stretch}
+  .searchInput,.btnSearch,.btnReset,.liveBtn{width:100%;justify-content:center}
+  .statsGrid{grid-template-columns:1fr}
+  .statsGrid .statCard:last-child{grid-column:auto}
+}
+</style>
+</head>
+<body>
+
+<!-- AUTH -->
+<div id="authWrap" class="authWrap">
+  <div class="authLeft">
+    <div class="authBrand"><div class="logoIcon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v4h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div> YükleGit</div>
+    <div class="authTagline">Türkiye genelindeki lojistik ilanlarını gerçek zamanlı takip edin, şehir bazlı arama yapın.</div>
+    <div class="authFeatures">
+      <div class="authFeature"><div class="dot"></div> 870+ şehir ve ilçe desteği</div>
+      <div class="authFeature"><div class="dot"></div> Anlık ilan takibi</div>
+      <div class="authFeature"><div class="dot"></div> Güzergah bazlı akıllı arama</div>
+    </div>
+  </div>
+  <div class="authRight">
+    <div id="loginForm">
+      <div class="authTitle">Giriş Yap</div>
+      <div class="authSubtitle">Hesabınıza giriş yapın</div>
+      <div class="formGroup"><label>Kullanıcı Adı veya E-posta</label>
+        <input type="text" id="loginUser" placeholder="kullanici veya mail@ornek.com" autocomplete="username"></div>
+      <div class="formGroup"><label>Şifre</label>
+        <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password"></div>
+      <button class="btnPrimary" onclick="login()">Giriş Yap</button>
+      <div class="authError" id="loginError"></div>
+      <div id="verifyWarn" style="display:none;margin-top:10px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;padding:10px 14px;border-radius:8px;font-size:13px">
+        E-postanız doğrulanmamış. <a onclick="resendVerify()" style="color:#c2410c;font-weight:700;cursor:pointer;text-decoration:underline">Tekrar gönder</a>
+      </div>
+      <div style="text-align:right;margin-top:8px"><a onclick="showForgot()" style="font-size:13px;color:var(--accent);cursor:pointer">Şifremi unuttum</a></div>
+      <div class="divider">veya</div>
+      <button class="btnGoogle" onclick="googleLogin()">
+        <svg class="googleIcon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        Google ile Giriş Yap
+      </button>
+      <div class="authSwitch" style="margin-top:14px">Hesabınız yok mu? <a onclick="showReg()">Kayıt olun</a></div>
+    </div>
+
+    <div id="forgotForm" style="display:none">
+      <div class="authTitle">Şifremi Unuttum</div>
+      <div class="authSubtitle">E-postanıza sıfırlama linki gönderelim</div>
+      <div class="formGroup"><label>E-posta</label>
+        <input type="email" id="forgotEmail" placeholder="mail@ornek.com"></div>
+      <button class="btnPrimary" onclick="forgotPassword()">Sıfırlama Linki Gönder</button>
+      <div class="authError" id="forgotError"></div>
+      <div id="forgotSuccess" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;color:#059669;padding:10px 14px;border-radius:8px;font-size:13px;margin-top:10px"></div>
+      <div class="authSwitch" style="margin-top:14px"><a onclick="showLogin()">← Giriş sayfasına dön</a></div>
+    </div>
+
+    <div id="regForm" style="display:none">
+      <div class="authTitle">Kayıt Ol</div>
+      <div class="authSubtitle">Yeni hesap oluşturun</div>
+      <div class="formGroup"><label>Kullanıcı Adı</label>
+        <input type="text" id="regUser" placeholder="kullanici_adi" autocomplete="username"></div>
+      <div class="formGroup"><label>E-posta</label>
+        <input type="email" id="regEmail" placeholder="mail@ornek.com" autocomplete="email"></div>
+      <div class="formGroup"><label>Telefon Numarası</label>
+        <input type="tel" id="regPhone" placeholder="05XX XXX XX XX" autocomplete="tel"></div>
+      <div class="formGroup"><label>Şifre</label>
+        <input type="password" id="regPass" placeholder="En az 6 karakter" autocomplete="new-password"></div>
+      <button class="btnPrimary" onclick="register()">Kayıt Ol</button>
+      <div class="authError" id="regError"></div>
+      <div id="regSuccess" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;color:#059669;padding:10px 14px;border-radius:8px;font-size:13px;margin-top:10px"></div>
+      <div class="divider">veya</div>
+      <button class="btnGoogle" onclick="googleLogin()">
+        <svg class="googleIcon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        Google ile Kayıt Ol
+      </button>
+      <div class="authSwitch" style="margin-top:12px">Zaten hesabınız var mı? <a onclick="showLogin()">Giriş yapın</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<button class="hamburger" id="hamburger" onclick="toggleSidebar()" style="display:none">
+  <span></span><span></span><span></span>
+</button>
+<div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+
+<div id="app">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebarLogo"><div class="logoIcon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v4h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div> YükleGit</div>
+    <div class="navSection">Menü</div>
+    <button class="navItem active" onclick="showPage('ilanlar')" id="nav-ilanlar"><span class="icon">📋</span> İlanlar</button>
+    <button class="navItem" onclick="showPage('profil')" id="nav-profil"><span class="icon">👤</span> Profilim</button>
+    <button class="navItem" onclick="showPage('ilanver')" id="nav-ilanver"><span class="icon">✏️</span> İlan Ver</button>
+    <div id="adminNav" style="display:none">
+      <div class="navSection">Yönetim</div>
+      <button class="navItem" onclick="showPage('kullanicilar')" id="nav-kullanicilar"><span class="icon">👥</span> Kullanıcılar</button>
+      <button class="navItem" onclick="showPage('blacklist')" id="nav-blacklist"><span class="icon">🚫</span> Kara Liste</button>
+      <button class="navItem" onclick="showPage('hareketler')" id="nav-hareketler"><span class="icon">📊</span> Hareketler</button>
+    </div>
+    <div class="sidebarBottom">
+      <div class="userBadge" onclick="showPage('profil');closeSidebar()">
+        <div class="userAvatar" id="userAvatar">?</div>
+        <div style="overflow:hidden">
+          <div class="userName" id="userNameDisplay">—</div>
+          <div class="userRole" id="userRoleDisplay">—</div>
+        </div>
+      </div>
+      <button class="btnLogout" onclick="logout()">⬅ Çıkış</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- İlanlar -->
+    <div id="page-ilanlar">
+      <div class="pageHeader"><div class="pageTitle">İlanlar</div><div class="pageSubtitle">Son 1 saat içindeki aktif lojistik ilanları</div></div>
+      <div class="statsGrid">
+        <div class="statCard"><div class="statLabel">Toplam İlan</div><div class="statValue blue" id="statTotal">—</div></div>
+        <div class="statCard"><div class="statLabel">Bot Durumu</div><div class="statValue green" id="statDurum">—</div></div>
+        <div class="statCard" style="cursor:pointer" onclick="document.getElementById('bildirimToggle').click()" id="bildirimKart">
+          <div class="statLabel">🔔 Bildirimler</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+            <label class="toggle" onclick="event.stopPropagation()">
+              <input type="checkbox" id="bildirimToggle" onchange="bildirimToggleChange()">
+              <span class="toggleSlider"></span>
+            </label>
+            <span style="font-size:13px;font-weight:600;color:var(--text)" id="bildirimKartText">Kapalı</span>
+          </div>
+        </div>
+        <div class="statCard" style="cursor:pointer;border:2px dashed var(--primary);background:linear-gradient(135deg,#eff6ff,#dbeafe)" onclick="pwaInstallOrGuide()" id="pwaCard">
+          <div class="statLabel">📲 Mobil Uygulama</div>
+          <div class="statValue" style="font-size:15px;color:var(--primary)" id="pwaCardText">Ana Ekrana Ekle</div>
+        </div>
+      </div>
+      <div class="searchCard">
+        <div class="searchRow">
+          <input type="text" class="searchInput" id="sehir1" placeholder="Şehir veya ilçe 1">
+          <input type="text" class="searchInput" id="sehir2" placeholder="Şehir veya ilçe 2">
+          <button class="btnSearch" onclick="araIlanlar()">🔍 Ara</button>
+          <button class="btnReset" onclick="resetArama()">Temizle</button>
+          <button class="liveBtn" id="liveBtn" onclick="toggleLive()"><div class="liveDot"></div> Canlı</button>
+        </div>
+      </div>
+      <div class="ilanlarBar"><div class="ilanCount">Gösterilen: <span id="ilanCountNum">0</span> ilan</div></div>
+      <div id="ilanList" class="ilanList"><div class="loader"><div class="spinner"></div></div></div>
+    </div>
+
+    <!-- Profil -->
+    <div id="page-profil" style="display:none">
+      <div class="pageHeader"><div class="pageTitle">Profilim</div><div class="pageSubtitle">Hesap bilgilerinizi yönetin</div></div>
+      <div class="profileGrid">
+        <div class="profileCard">
+          <div class="profileHeader"><div class="profileTitle">Hesap Bilgileri</div></div>
+          <div class="profileBody">
+            <div class="infoRow"><div class="infoLabel">Kullanıcı Adı</div><div class="infoValue" id="profileUsername">—</div></div>
+            <div class="infoRow"><div class="infoLabel">E-posta</div><div class="infoValue" id="profileEmail">—</div></div>
+            <div class="infoRow"><div class="infoLabel">Telefon</div><div class="infoValue" id="profilePhone">—</div></div>
+            <div class="infoRow"><div class="infoLabel">Rol</div><div class="infoValue" id="profileRole">—</div></div>
+          </div>
+        </div>
+        <div class="profileCard">
+          <div class="profileHeader"><div class="profileTitle">E-posta Güncelle</div></div>
+          <div class="profileBody">
+            <div class="formGroup"><label>Yeni E-posta</label><input type="email" id="newEmail" placeholder="yeni@mail.com"></div>
+            <button class="btnPrimary" onclick="updateEmail()">Güncelle</button>
+            <div class="profileMsg" id="emailMsg"></div>
+          </div>
+        </div>
+        <div class="profileCard" style="grid-column:1/-1">
+          <div class="profileHeader"><div class="profileTitle">🔔 Bildirim Ayarları</div></div>
+          <div class="profileBody">
+            <div class="bildirimToggle">
+              <label class="toggle">
+                <input type="checkbox" id="bildirimToggle" onchange="bildirimToggleChange()">
+                <span class="toggleSlider"></span>
+              </label>
+              <div>
+                <div class="toggleLabel">Tarayıcı Bildirimleri</div>
+                <div class="toggleSub" id="bildirimDurum">Takip ettiğiniz illerde ilan gelince bildirim alın (il seçince tüm ilçeleri kapsar)</div>
+              </div>
+            </div>
+            <div id="bildirimAyarlar" style="display:none">
+              <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--muted)">TAKİP EDİLECEK ŞEHİRLER</div>
+              <input class="bildirimArama" id="bildirimSehirAra" placeholder="Şehir veya ilçe ara..." oninput="sehirFiltrele()">
+              <div class="sehirSecici" id="sehirChipler"></div>
+              <div style="font-size:12px;color:var(--muted);margin-top:8px">Seçili: <strong id="seciliSayisi">0</strong> şehir/ilçe</div>
+            </div>
+          </div>
+        </div>
+
+      <div class="profileCard" style="grid-column:1/-1">
+          <div class="profileHeader"><div class="profileTitle">Şifre Değiştir</div></div>
+          <div class="profileBody" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;align-items:end">
+            <div class="formGroup" style="margin:0"><label>Mevcut Şifre</label><input type="password" id="curPass" placeholder="••••••••"></div>
+            <div class="formGroup" style="margin:0"><label>Yeni Şifre</label><input type="password" id="newPass" placeholder="En az 6 karakter"></div>
+            <button class="btnPrimary" onclick="updatePassword()" style="margin:0">Şifreyi Değiştir</button>
+            <div class="profileMsg" id="passMsg" style="grid-column:1/-1"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- İlan Ver -->
+    <div id="page-ilanver" style="display:none">
+      <div class="pageHeader"><div class="pageTitle">İlan Ver</div><div class="pageSubtitle">Lojistik ilanınızı yayınlayın</div></div>
+      <div class="ilanForm">
+        <div class="ilanFormTitle">🚛 Yeni İlan Oluştur</div>
+        <div class="ilanFormSub">İlan metninizi yazın. Telefon numaranız otomatik eklenecektir.</div>
+        <textarea class="ilanTextarea" id="ilanMetin" placeholder="Örnek:&#10;İSTANBUL - ANKARA&#10;Yük cinsi: Tekstil&#10;Tonaj: 10 ton&#10;Tarih: Yarın sabah" maxlength="1000" oninput="updateCharCount()"></textarea>
+        <div class="ilanFormBottom">
+          <div>
+            <span class="charCount" id="charCount">0 / 1000</span>
+            <span class="phoneNote" id="phoneNote" style="margin-left:8px">📞 Numaranız otomatik eklenecek</span>
+          </div>
+          <button class="btnSearch" onclick="ilanGonder()" id="ilanGonderBtn">📢 İlanı Yayınla</button>
+        </div>
+        <div id="ilanMsg" style="display:none;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:13px"></div>
+      </div>
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:var(--radius);padding:14px 18px;font-size:13px;color:#92400e">
+        ⚠️ <strong>Hatırlatma:</strong> Yanıltıcı veya sahte ilan paylaşmak hesabınızın askıya alınmasına neden olabilir.
+      </div>
+    </div>
+
+    <!-- Kullanıcılar -->
+    <div id="page-kullanicilar" style="display:none">
+      <div class="pageHeader"><div class="pageTitle">Kullanıcı Yönetimi</div><div class="pageSubtitle">Sisteme erişen kullanıcıları yönetin</div></div>
+      <div class="card">
+        <div class="addForm">
+          <h4>Yeni Kullanıcı Ekle</h4>
+          <div class="formRow">
+            <div class="formGroup"><label>Kullanıcı Adı</label><input type="text" id="newUsername" class="searchInput" placeholder="kullanici"></div>
+            <div class="formGroup"><label>E-posta</label><input type="email" id="newUserEmail" class="searchInput" placeholder="mail@ornek.com"></div>
+            <div class="formGroup"><label>Şifre</label><input type="password" id="newPassword" class="searchInput" placeholder="••••••••"></div>
+            <div class="formGroup"><label>Rol</label><select id="newRole" class="searchInput"><option value="user">Kullanıcı</option><option value="admin">Admin</option></select></div>
+            <button class="btnAdd" onclick="addUser()">+ Ekle</button>
+          </div>
+        </div>
+        <div class="tableWrap">
+          <table>
+            <thead><tr><th>Kullanıcı</th><th>E-posta</th><th>Telefon</th><th>Rol</th><th>Tarih</th><th>İşlem</th></tr></thead>
+            <tbody id="userTableBody"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:28px">Yükleniyor...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kara Liste -->
+    <div id="page-blacklist" style="display:none">
+      <div class="pageHeader"><div class="pageTitle">Kara Liste</div><div class="pageSubtitle">Bu kelimeleri içeren ilanlar gösterilmez</div></div>
+      <div class="card">
+        <div id="blacklistTags" class="blGrid"><div class="loader"><div class="spinner"></div></div></div>
+        <div class="blAdd">
+          <input type="text" class="searchInput" id="newBlackword" placeholder="Engellenecek kelime...">
+          <button class="btnAdd" onclick="addBlacklist()">+ Ekle</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="page-hareketler" style="display:none">
+      <div class="pageHeader">
+        <div><div class="pageTitle">📊 Kullanıcı Hareketleri</div><div class="pageSubtitle">Giriş, çıkış ve arama geçmişi</div></div>
+        <button class="btn" onclick="loadHareketler()">🔄 Yenile</button>
+      </div>
+      <div class="card" style="overflow-x:auto">
+        <table class="dataTable">
+          <thead>
+            <tr>
+              <th>Kullanıcı</th>
+              <th>E-posta</th>
+              <th>Telefon</th>
+              <th>İşlem</th>
+              <th>Detay</th>
+              <th>IP</th>
+              <th>Zaman</th>
+            </tr>
+          </thead>
+          <tbody id="hareketlerBody">
+            <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted)">Yükleniyor...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let token=localStorage.getItem('yg_token');
+let currentUser=JSON.parse(localStorage.getItem('yg_user')||'null');
+let liveInterval=null,isLive=false,lastSearch={s1:'',s2:''};
+
+// Google OAuth token yakalama
+(function(){
+  const p=new URLSearchParams(window.location.search);
+  const gt=p.get('google_token'),gu=p.get('user');
+  if(gt&&gu){try{token=gt;currentUser=JSON.parse(decodeURIComponent(gu));localStorage.setItem('yg_token',token);localStorage.setItem('yg_user',JSON.stringify(currentUser));}catch(e){}window.history.replaceState({},'','/');}
+  if(p.get('error')==='google'){window.history.replaceState({},'','/');setTimeout(()=>{const el=document.getElementById('loginError');if(el){el.textContent='Google ile giriş başarısız.';el.style.display='block';}},100);}
+})();
+
+// Hamburger
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('overlay').classList.toggle('show');}
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('overlay').classList.remove('show');}
+
+// Auth sayfaları
+function showReg(){['loginForm','forgotForm'].forEach(id=>document.getElementById(id).style.display='none');document.getElementById('regForm').style.display='block';}
+function showLogin(){['regForm','forgotForm'].forEach(id=>document.getElementById(id).style.display='none');document.getElementById('loginForm').style.display='block';}
+function showForgot(){['loginForm','regForm'].forEach(id=>document.getElementById(id).style.display='none');document.getElementById('forgotForm').style.display='block';}
+function googleLogin(){window.location.href='/auth/google';}
+
+async function login(){
+  const username=document.getElementById('loginUser').value.trim();
+  const password=document.getElementById('loginPass').value;
+  const errEl=document.getElementById('loginError');
+  errEl.style.display='none';document.getElementById('verifyWarn').style.display='none';
+  try{
+    const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
+    const data=await res.json();
+    if(!res.ok){if(data.needsVerification){document.getElementById('verifyWarn').style.display='block';window._unverifiedEmail=username;}throw new Error(data.error);}
+    saveSession(data);initApp();
+  }catch(e){errEl.textContent=e.message;errEl.style.display='block';}
+}
+
+async function register(){
+  const username=document.getElementById('regUser').value.trim();
+  const email=document.getElementById('regEmail').value.trim();
+  const phone=document.getElementById('regPhone').value.trim();
+  const password=document.getElementById('regPass').value;
+  const errEl=document.getElementById('regError');const okEl=document.getElementById('regSuccess');
+  errEl.style.display='none';okEl.style.display='none';
+  try{
+    const res=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,email,phone,password})});
+    const data=await res.json();
+    if(!res.ok)throw new Error(data.error);
+    if(data.needsVerification){okEl.textContent=data.message;okEl.style.display='block';return;}
+    saveSession(data);initApp();
+  }catch(e){errEl.textContent=e.message;errEl.style.display='block';}
+}
+
+async function resendVerify(){
+  const email=window._unverifiedEmail||document.getElementById('loginUser').value.trim();
+  if(!email)return;
+  await fetch('/api/resend-verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+  document.getElementById('verifyWarn').textContent='Doğrulama maili gönderildi, gelen kutunuzu kontrol edin.';
+}
+
+async function forgotPassword(){
+  const email=document.getElementById('forgotEmail').value.trim();
+  const errEl=document.getElementById('forgotError');const okEl=document.getElementById('forgotSuccess');
+  errEl.style.display='none';okEl.style.display='none';
+  try{
+    const res=await fetch('/api/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    const data=await res.json();
+    okEl.textContent=data.message;okEl.style.display='block';
+  }catch(e){errEl.textContent=e.message;errEl.style.display='block';}
+}
+
+function saveSession(data){token=data.token;currentUser={...data.user};localStorage.setItem('yg_token',token);localStorage.setItem('yg_user',JSON.stringify(currentUser));}
+
+function logout(){
+  if(token) api('/api/logout',{method:'POST'}).catch(()=>{});localStorage.removeItem('yg_token');localStorage.removeItem('yg_user');token=null;currentUser=null;document.getElementById('app').style.display='none';document.getElementById('authWrap').style.display='flex';document.getElementById('hamburger').style.display='none';showLogin();}
+
+function initApp(){
+  document.getElementById('authWrap').style.display='none';
+  document.getElementById('app').style.display='block';
+  if(window.innerWidth <= 768) document.getElementById('hamburger').style.display='flex';
+  document.getElementById('userNameDisplay').textContent=currentUser.username;
+  document.getElementById('userRoleDisplay').textContent=currentUser.role==='admin'?'Admin':'Kullanıcı';
+  document.getElementById('userAvatar').textContent=currentUser.username[0].toUpperCase();
+  if(currentUser.role==='admin'){document.getElementById('adminNav').style.display='block';document.getElementById('hareketlerNav').style.display='block';}
+  loadStats();loadIlanlar();
+  if(bildirimAktif && seciliSehirler.length>0) baslatBildirimKontrol();
+  // Bildirim kart durumunu güncelle
+  setTimeout(loadProfilBildirim, 300);
+}
+
+function showPage(page){
+  ['ilanlar','profil','ilanver','kullanicilar','blacklist','hareketler'].forEach(p=>{
+    const el=document.getElementById('page-'+p);if(el)el.style.display=p===page?'block':'none';
+    const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);
+  });
+  closeSidebar();
+  if(page==='profil')loadProfil();
+  if(page==='kullanicilar')loadUsers();
+  if(page==='blacklist')loadBlacklist();
+  if(page==='hareketler')loadHareketler();
+}
+
+async function api(url,opts={}){
+  const res=await fetch(url,{...opts,headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,...(opts.headers||{})}});
+  if(res.status===401){logout();return null;}
+  return res.json();
+}
+
+async function loadStats(){
+  const d=await api('/api/stats');if(!d)return;
+  document.getElementById('statTotal').textContent=d.total;
+  document.getElementById('statDurum').textContent=d.botDurumu;
+  document.getElementById('statTTL').textContent=d.ttlDakika+' dk';
+}
+
+async function loadIlanlar(s1,s2){
+  document.getElementById('ilanList').innerHTML='<div class="loader"><div class="spinner"></div></div>';
+  let url='/api/ilanlar';
+  if(s1){url+='?sehir1='+encodeURIComponent(s1);if(s2)url+='&sehir2='+encodeURIComponent(s2);}
+  const data=await api(url);if(!data)return;
+  const ilanlar=data.ilanlar||data;
+  const matchedTerms=data.matchedTerms||[s1,s2].filter(Boolean);
+  if(data.hata){document.getElementById('ilanCountNum').textContent='0';document.getElementById('ilanList').innerHTML='<div class="emptyState"><div class="emptyIcon">🔍</div><p>'+esc(data.hata)+'</p></div>';return;}
+  renderIlanlar(ilanlar,matchedTerms);loadStats();
+}
+
+function renderIlanlar(ilanlar,matchedTerms=[]){
+  document.getElementById('ilanCountNum').textContent=ilanlar.length;
+  if(!ilanlar.length){
+    document.getElementById('ilanList').innerHTML='<div class="emptyState"><div class="emptyIcon">📭</div><p>Aradığınız kriterlere uygun ilan bulunamadı.</p></div>';return;
+  }
+  document.getElementById('ilanList').innerHTML=ilanlar.map((ilan,i)=>`
+    <div class="ilanCard">
+      <div class="ilanMeta">
+        <span class="ilanNum">İlan ${i+1}</span>
+        <span class="ilanGrup">📍 ${esc(ilan.chatName||'Grup')}</span>
+        <span class="ilanTime">⏱ ${timeAgo(ilan.timestamp)}</span>
+      </div>
+      <div class="ilanText">${hlText(ilan.text,matchedTerms)}</div>
+      ${(ilan.cities||[]).length?`<div class="ilanSehirler">${ilan.cities.map(c=>`<span class="sehirTag">${esc(c)}</span>`).join('')}</div>`:''}
+    </div>`).join('');
+}
+
+function hlText(text,terms){
+  let s=esc(text);
+  // Önce telefon numaralarını tıklanabilir yap
+  s=s.replace(/(\+?[\d][\d\s\-().]{7,}[\d])/g,(m)=>{
+    const clean=m.replace(/[\s\-().]/g,'');
+    if(clean.length<10||clean.length>15)return m;
+    return '<a href="tel:'+clean+'" class="telLink">'+m+'</a>';
+  });
+  // Sonra şehirleri vurgula
+  const sorted=[...terms].filter(Boolean).sort((a,b)=>b.length-a.length);
+  sorted.forEach(c=>{
+    const re=new RegExp('(?![^<]*>)('+c.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+    s=s.replace(re,'<span class="hl">$1</span>');
+  });
+  return s;
+}
+
+function updateCharCount(){
+  const ta=document.getElementById('ilanMetin');
+  const cc=document.getElementById('charCount');
+  if(!ta||!cc)return;
+  const n=ta.value.length;
+  cc.textContent=n+' / 1000';
+  cc.className='charCount'+(n>900?' warn':'');
+}
+
+async function ilanGonder(){
+  const metin=document.getElementById('ilanMetin').value.trim();
+  const msgEl=document.getElementById('ilanMsg');
+  const btn=document.getElementById('ilanGonderBtn');
+  if(!metin){msgEl.textContent='İlan metni boş olamaz.';msgEl.style.background='#fef2f2';msgEl.style.color='var(--danger)';msgEl.style.border='1px solid #fecaca';msgEl.style.display='block';return;}
+  btn.disabled=true;btn.textContent='Yayınlanıyor...';
+  try{
+    const res=await api('/api/ilan-olustur',{method:'POST',body:JSON.stringify({metin})});
+    if(res&&res.ok){
+      msgEl.textContent='✅ '+res.message;msgEl.style.background='#f0fdf4';msgEl.style.color='var(--success)';msgEl.style.border='1px solid #bbf7d0';msgEl.style.display='block';
+      document.getElementById('ilanMetin').value='';updateCharCount();
+      setTimeout(()=>msgEl.style.display='none',4000);
+    }else if(res){
+      msgEl.textContent=res.error;msgEl.style.background='#fef2f2';msgEl.style.color='var(--danger)';msgEl.style.border='1px solid #fecaca';msgEl.style.display='block';
+    }
+  }catch(e){msgEl.textContent='Bir hata oluştu.';msgEl.style.display='block';}
+  btn.disabled=false;btn.textContent='📢 İlanı Yayınla';
+}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function timeAgo(ts){
+  const d=Math.floor((Date.now()-ts)/1000);
+  if(d<60)return d+' sn önce';if(d<3600)return Math.floor(d/60)+' dk önce';
+  const h=Math.floor(d/3600),m=Math.floor((d%3600)/60);return m>0?h+' sa '+m+' dk önce':h+' sa önce';
+}
+
+function araIlanlar(){const s1=document.getElementById('sehir1').value.trim(),s2=document.getElementById('sehir2').value.trim();lastSearch={s1,s2};loadIlanlar(s1||undefined,s2||undefined);}
+function resetArama(){document.getElementById('sehir1').value='';document.getElementById('sehir2').value='';lastSearch={s1:'',s2:''};loadIlanlar();}
+function toggleLive(){isLive=!isLive;document.getElementById('liveBtn').classList.toggle('active',isLive);if(isLive)liveInterval=setInterval(()=>loadIlanlar(lastSearch.s1||undefined,lastSearch.s2||undefined),15000);else clearInterval(liveInterval);}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('page-ilanlar')?.style.display!=='none')araIlanlar();});
+
+window.addEventListener('resize',()=>{
+  const hb=document.getElementById('hamburger');
+  if(!hb||!token)return;
+  hb.style.display=window.innerWidth<=768?'flex':'none';
+  if(window.innerWidth>768)closeSidebar();
+});
+
+// Profil
+function loadProfil(){loadProfilBildirim();
+  document.getElementById('profileUsername').textContent=currentUser.username;
+  document.getElementById('profileEmail').textContent=currentUser.email||'—';
+  document.getElementById('profilePhone').textContent=currentUser.phone||'—';
+  const isA=currentUser.role==='admin';
+  document.getElementById('profileRole').innerHTML=`<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;background:${isA?'#eff6ff':'#f0fdf4'};color:${isA?'var(--accent)':'var(--success)'}">${isA?'Admin':'Kullanıcı'}</span>`;
+  document.getElementById('newEmail').value=currentUser.email||'';
+}
+async function updateEmail(){
+  const email=document.getElementById('newEmail').value.trim();
+  const data=await api('/api/profile',{method:'PUT',body:JSON.stringify({email})});if(!data)return;
+  if(data.ok){currentUser.email=email;localStorage.setItem('yg_user',JSON.stringify(currentUser));showMsg('emailMsg','E-posta güncellendi!','ok');loadProfil();}
+  else showMsg('emailMsg',data.error,'err');
+}
+async function updatePassword(){
+  const currentPassword=document.getElementById('curPass').value,newPassword=document.getElementById('newPass').value;
+  const data=await api('/api/profile',{method:'PUT',body:JSON.stringify({currentPassword,newPassword})});if(!data)return;
+  if(data.ok){document.getElementById('curPass').value='';document.getElementById('newPass').value='';showMsg('passMsg','Şifre başarıyla değiştirildi!','ok');}
+  else showMsg('passMsg',data.error,'err');
+}
+function showMsg(id,msg,type){const el=document.getElementById(id);el.textContent=msg;el.className='profileMsg '+type;el.style.display='block';setTimeout(()=>el.style.display='none',4000);}
+
+// Kullanıcılar
+async function loadUsers(){
+  const users=await api('/api/users');if(!users)return;
+  document.getElementById('userTableBody').innerHTML=users.map(u=>`
+    <tr>
+      <td><strong>${esc(u.username)}</strong></td>
+      <td style="color:var(--muted)">${u.email||'—'}</td>
+      <td style="color:var(--muted)">${u.phone||'—'}</td>
+      <td><span class="roleBadge ${u.role}">${u.role==='admin'?'Admin':'Kullanıcı'}</span></td>
+      <td style="color:var(--muted);font-size:12px">${new Date(u.createdAt).toLocaleDateString('tr-TR')}</td>
+      <td>${u.username!==currentUser.username?`<button class="btnSm btnDanger" onclick="deleteUser(${u.id})">Sil</button>`:'<span style="color:var(--muted);font-size:12px">Sen</span>'}</td>
+    </tr>`).join('');
+}
+async function addUser(){
+  const username=document.getElementById('newUsername').value.trim(),email=document.getElementById('newUserEmail').value.trim();
+  const password=document.getElementById('newPassword').value,role=document.getElementById('newRole').value;
+  if(!username||!password)return alert('Kullanıcı adı ve şifre gerekli');
+  const res=await api('/api/users',{method:'POST',body:JSON.stringify({username,email,password,role})});
+  if(res&&!res.error){document.getElementById('newUsername').value='';document.getElementById('newUserEmail').value='';document.getElementById('newPassword').value='';loadUsers();}
+  else if(res)alert(res.error);
+}
+async function deleteUser(id){if(!confirm('Bu kullanıcıyı silmek istiyor musunuz?'))return;await api('/api/users/'+id,{method:'DELETE'});loadUsers();}
+
+// Kara liste
+async function loadBlacklist(){
+  const list=await api('/api/blacklist');if(!list)return;
+  document.getElementById('blacklistTags').innerHTML=list.length
+    ?list.map(k=>`<div class="blTag">🚫 ${esc(k)}<button onclick="removeBlacklist('${esc(k)}')">×</button></div>`).join('')
+    :'<span style="color:var(--muted);font-size:14px">Kara listede kelime yok</span>';
+}
+async function addBlacklist(){const k=document.getElementById('newBlackword').value.trim();if(!k)return;await api('/api/blacklist',{method:'POST',body:JSON.stringify({kelime:k})});document.getElementById('newBlackword').value='';loadBlacklist();}
+async function removeBlacklist(k){await api('/api/blacklist/'+encodeURIComponent(k),{method:'DELETE'});loadBlacklist();}
+
+// ── Bildirim Sistemi ──────────────────────────
+const tumIller = [
+  'adana','adıyaman','afyon','ağrı','aksaray','amasya','ankara','antalya',
+  'ardahan','artvin','aydın','balıkesir','bartın','batman','bayburt','bilecik',
+  'bingöl','bitlis','bolu','burdur','bursa','çanakkale','çankırı','çorum',
+  'denizli','diyarbakır','düzce','edirne','elazığ','erzincan','erzurum',
+  'eskişehir','gaziantep','giresun','gümüşhane','hakkari','hatay','ısparta',
+  'iğdır','istanbul','izmir','kahramanmaraş','karabük','karaman','kars',
+  'kastamonu','kayseri','kilis','kırıkkale','kırklareli','kırşehir','kocaeli',
+  'konya','kütahya','malatya','manisa','mardin','mersin','muğla','muş',
+  'nevşehir','niğde','ordu','osmaniye','rize','sakarya','samsun','siirt',
+  'sinop','sivas','şanlıurfa','şırnak','tekirdağ','tokat','trabzon','tunceli',
+  'uşak','van','yalova','yozgat','zonguldak'
+];
+let seciliSehirler = JSON.parse(localStorage.getItem('yg_bildirim_sehirler')||'[]');
+let bildirimAktif = localStorage.getItem('yg_bildirim_aktif') === 'true';
+let sonIlanTimestamp = 0;
+let bildirimInterval = null;
+
+function bildirimToggleChange(){
+  const chk = document.getElementById('bildirimToggle');
+  const kartText = document.getElementById('bildirimKartText');
+  if(chk.checked){
+    if(!('Notification' in window)){
+      alert('Tarayıcınız bildirimleri desteklemiyor.');
+      chk.checked = false; return;
+    }
+    Notification.requestPermission().then(p => {
+      if(p === 'granted'){
+        bildirimAktif = true;
+        localStorage.setItem('yg_bildirim_aktif','true');
+        if(document.getElementById('bildirimAyarlar')) document.getElementById('bildirimAyarlar').style.display = 'block';
+        if(document.getElementById('bildirimDurum')) document.getElementById('bildirimDurum').textContent = '✅ Bildirimler aktif';
+        if(kartText){ kartText.textContent = '✅ Açık'; kartText.style.color = '#16a34a'; }
+        renderSehirChipler();
+        baslatBildirimKontrol();
+      } else {
+        chk.checked = false;
+        if(document.getElementById('bildirimDurum')) document.getElementById('bildirimDurum').textContent = '⚠️ Tarayıcıdan izin vermeniz gerekiyor';
+        if(kartText){ kartText.textContent = 'İzin Gerekli'; kartText.style.color = '#f59e0b'; }
+      }
+    });
+  } else {
+    bildirimAktif = false;
+    localStorage.setItem('yg_bildirim_aktif','false');
+    if(document.getElementById('bildirimAyarlar')) document.getElementById('bildirimAyarlar').style.display = 'none';
+    if(document.getElementById('bildirimDurum')) document.getElementById('bildirimDurum').textContent = 'Takip ettiğiniz illerde ilan gelince bildirim alın (il seçince tüm ilçeleri kapsar)';
+    if(kartText){ kartText.textContent = 'Kapalı'; kartText.style.color = 'var(--text)'; }
+    durdurBildirimKontrol();
+  }
+}
+
+function renderSehirChipler(filtre=''){
+  const container = document.getElementById('sehirChipler');
+  if(!container) return;
+  const normFiltre = filtre.toLowerCase().replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ş/g,'s').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ç/g,'c');
+  const liste = filtre ? tumIller.filter(s => {
+    const ns = s.toLowerCase().replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ş/g,'s').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ç/g,'c');
+    return ns.includes(normFiltre);
+  }) : tumIller;
+
+  container.innerHTML = liste.map(s => {
+    const aktif = seciliSehirler.includes(s);
+    return `<div class="sehirChip${aktif?' aktif':''}" onclick="sehirToggle('${s}')">${s.charAt(0).toUpperCase()+s.slice(1)}</div>`;
+  }).join('');
+  document.getElementById('seciliSayisi').textContent = seciliSehirler.length;
+}
+
+function sehirToggle(sehir){
+  const idx = seciliSehirler.indexOf(sehir);
+  if(idx>=0) seciliSehirler.splice(idx,1);
+  else seciliSehirler.push(sehir);
+  localStorage.setItem('yg_bildirim_sehirler', JSON.stringify(seciliSehirler));
+  const filtre = document.getElementById('bildirimSehirAra')?.value || '';
+  renderSehirChipler(filtre);
+}
+
+function sehirFiltrele(){
+  const filtre = document.getElementById('bildirimSehirAra')?.value || '';
+  renderSehirChipler(filtre);
+}
+
+function baslatBildirimKontrol(){
+  if(bildirimInterval) return;
+  bildirimInterval = setInterval(async ()=>{
+    if(!bildirimAktif || seciliSehirler.length===0) return;
+    try{
+      const data = await api('/api/ilanlar');
+      if(!data) return;
+      const ilanlar = data.ilanlar || data;
+      // Yeni ilanları bul (son kontrolden sonra gelenler)
+      const yeniIlanlar = ilanlar.filter(i => i.timestamp > sonIlanTimestamp);
+      if(yeniIlanlar.length > 0) sonIlanTimestamp = Math.max(...ilanlar.map(i=>i.timestamp));
+      else if(sonIlanTimestamp === 0){ sonIlanTimestamp = Math.max(...ilanlar.map(i=>i.timestamp),0); return; }
+
+      // İl → ilçe haritası (frontend'de küçük özet)
+      const IL_ILCE_OZET = {
+        'istanbul':['adalar','arnavutköy','ataşehir','avcılar','bağcılar','bahçelievler','bakırköy','başakşehir','bayrampaşa','beşiktaş','beykoz','beylikdüzü','beyoğlu','büyükçekmece','çatalca','çekmeköy','esenler','esenyurt','eyüpsultan','fatih','gaziosmanpaşa','güngören','kadıköy','kağıthane','kartal','küçükçekmece','maltepe','pendik','sancaktepe','sarıyer','silivri','sultanbeyli','sultangazi','şile','şişli','tuzla','ümraniye','üsküdar','zeytinburnu'],
+        'ankara':['altındağ','çankaya','etimesgut','keçiören','mamak','sincan','yenimahalle','pursaklar','gölbaşı','polatlı'],
+        'izmir':['balçova','bayındır','bayraklı','bergama','bornova','buca','çeşme','çiğli','dikili','foça','gaziemir','güzelbahçe','karabağlar','karşıyaka','kemalpaşa','konak','menemen','narlıdere','torbalı','urla'],
+        'bursa':['nilüfer','osmangazi','yıldırım','gemlik','inegöl','mudanya','orhangazi'],
+        'antalya':['kepez','konyaaltı','muratpaşa','alanya','manavgat','serik'],
+        'samsun':['atakum','canik','ilkadım','tekkeköy','bafra','çarşamba','terme','alaçam','havza','kavak','ondokuzmayıs'],
+        'kocaeli':['başiskele','çayırova','darıca','derince','gebze','gölcük','izmit','kandıra','kartepe','körfez'],
+        'sakarya':['adapazarı','akyazı','erenler','hendek','sapanca','serdivan'],
+      };
+
+      const normIl = s => s.toLowerCase().replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ş/g,'s').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ç/g,'c').replace(/İ/g,'i');
+
+      for(const ilan of yeniIlanlar){
+        const normMetin = ' ' + normIl(ilan.text) + ' ';
+        const eslesme = seciliSehirler.find(il => {
+          const ns = normIl(il);
+          // İlin kendisi geçiyor mu?
+          if(normMetin.includes(' '+ns+' ')) return true;
+          // İlin ilçelerinden biri geçiyor mu?
+          const ilceler = IL_ILCE_OZET[il] || [];
+          return ilceler.some(ilce => normMetin.includes(' '+normIl(ilce)+' '));
+        });
+        if(eslesme){
+          new Notification('🚛 YükleGit — Yeni İlan', {
+            body: eslesme.charAt(0).toUpperCase()+eslesme.slice(1)+' ilanı: '+ilan.text.slice(0,80)+'...',
+            icon: '/favicon.ico',
+            tag: 'ilan_'+ilan.timestamp,
+          });
+        }
+      }
+    }catch(e){}
+  }, 20000); // 20 saniyede bir kontrol
+}
+
+function durdurBildirimKontrol(){
+  clearInterval(bildirimInterval);
+  bildirimInterval = null;
+}
+
+function loadProfilBildirim(){
+  const chk = document.getElementById('bildirimToggle');
+  if(!chk) return;
+  const izin = Notification.permission === 'granted';
+  chk.checked = bildirimAktif && izin;
+  const kartText = document.getElementById('bildirimKartText');
+  if(chk.checked){
+    if(document.getElementById('bildirimAyarlar')) document.getElementById('bildirimAyarlar').style.display = 'block';
+    if(document.getElementById('bildirimDurum')) document.getElementById('bildirimDurum').textContent = '✅ Bildirimler aktif';
+    if(kartText){ kartText.textContent = '✅ Açık'; kartText.style.color = '#16a34a'; }
+    renderSehirChipler();
+  } else {
+    if(kartText){ kartText.textContent = 'Kapalı'; kartText.style.color = 'var(--text)'; }
+  }
+}
+
+// ── Hareketler ──────────────────────────────────
+async function loadHareketler(){
+  const data = await api('/api/logs?limit=300');
+  if(!data) return;
+  const tbody = document.getElementById('hareketlerBody');
+  if(!tbody) return;
+  if(!data.length){ tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted)">Henüz kayıt yok</td></tr>'; return; }
+  const actionLabel = a => {
+    if(a==='login')  return '<span class="actionBadge login">🔑 Giriş</span>';
+    if(a==='logout') return '<span class="actionBadge logout">🚪 Çıkış</span>';
+    if(a==='search') return '<span class="actionBadge search">🔍 Arama</span>';
+    return `<span class="actionBadge">${esc(a)}</span>`;
+  };
+  tbody.innerHTML = data.map(l=>`<tr>
+    <td><strong>${esc(l.username||'#'+l.userId)}</strong></td>
+    <td>${esc(l.email||'-')}</td>
+    <td>${esc(l.phone||'-')}</td>
+    <td>${actionLabel(l.action)}</td>
+    <td>${esc(l.detail||'-')}</td>
+    <td style="font-family:monospace;font-size:12px">${esc(l.ipAddress||'-')}</td>
+    <td style="white-space:nowrap;color:var(--muted)">${new Date(l.timestamp).toLocaleString('tr-TR')}</td>
+  </tr>`).join('');
+}
+
+// Başlat
+if(token&&currentUser){initApp();}
+</script>
+  <!-- PWA Install Banner -->
+  <div id="pwaBanner" style="display:none" class="pwaBanner">
+    <div class="pwaIcon">🚛</div>
+    <div class="pwaText">
+      <div class="pwaTitle">YükleGit Uygulaması</div>
+      <div class="pwaSub">Ana ekrana ekle, uygulama gibi kullan</div>
+    </div>
+    <button class="pwaBtn" onclick="pwaInstall()">Yükle</button>
+    <button class="pwaClose" onclick="pwaDismiss()">✕</button>
+  </div>
+
+  <script>
+    // PWA Service Worker
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('/sw.js').catch(()=>{});
+    }
+
+    // Zaten kuruluysa kartı güncelle
+    if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){
+      setTimeout(()=>{
+        const c = document.getElementById('pwaCard');
+        const t = document.getElementById('pwaCardText');
+        if(c){c.style.background='linear-gradient(135deg,#dcfce7,#bbf7d0)';c.style.cursor='default';}
+        if(t){t.textContent='✅ Kurulu';t.style.color='#16a34a';}
+      }, 500);
+    }
+
+    // Install prompt
+    let _pwaPrompt = null;
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      _pwaPrompt = e;
+      if(localStorage.getItem('yg_pwa_dismissed')) return;
+      if(localStorage.getItem('yg_token')){
+        document.getElementById('pwaBanner').style.display = 'flex';
+      } else {
+        window._showPwaBanner = true;
+      }
+    });
+
+    function pwaInstall(){
+      if(!_pwaPrompt) return;
+      _pwaPrompt.prompt();
+      _pwaPrompt.userChoice.then(r => {
+        document.getElementById('pwaBanner').style.display = 'none';
+        if(r.outcome==='accepted'){
+          const t=document.getElementById('pwaCardText');
+          if(t){t.textContent='✅ Kuruldu!';}
+        }
+        _pwaPrompt = null;
+      });
+    }
+
+    function pwaInstallOrGuide(){
+      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      const installed = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+      if(installed) return;
+      if(_pwaPrompt){
+        pwaInstall();
+      } else if(isIOS){
+        alert('📲 iPhone/iPad\'e kurmak için:\n\nSafari\'de alttaki "Paylaş" butonuna (□↑) tıklayın\n→ "Ana Ekrana Ekle" seçin\n→ "Ekle" ye basın');
+      } else {
+        alert('📲 Telefona kurmak için:\n\nTarayıcı menüsünden (⋮)\n"Ana ekrana ekle" veya\n"Uygulamayı yükle" seçeneğini tıklayın');
+      }
+    }
+
+    function pwaDismiss(){
+      document.getElementById('pwaBanner').style.display = 'none';
+      localStorage.setItem('yg_pwa_dismissed', '1');
+    }
+
+    // iOS banner
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isStandalone = window.navigator.standalone;
+    if(isIOS && !isStandalone && !localStorage.getItem('yg_pwa_dismissed')){
+      setTimeout(() => {
+        if(!localStorage.getItem('yg_token')) return;
+        const b = document.getElementById('pwaBanner');
+        b.querySelector('.pwaSub').textContent = 'Safari\'de "Paylaş" → "Ana Ekrana Ekle"';
+        b.querySelector('.pwaBtn').style.display = 'none';
+        b.style.display = 'flex';
+      }, 2000);
+    }
+  </script>
+</body>
+</html>
