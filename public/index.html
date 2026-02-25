@@ -206,6 +206,22 @@ tr:hover td{background:#f8faff}
 .sehirOneriItem.eklenmis{opacity:.5;cursor:default}
 .searchInputWrap{position:relative;flex:1}
 
+/* AI Arama */
+.btnAI{padding:9px 16px;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:white;border:none;border-radius:8px;font-family:'Outfit',sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:6px}
+.btnAI:hover{background:linear-gradient(135deg,#6d28d9,#4338ca);transform:translateY(-1px);box-shadow:0 4px 12px rgba(124,58,237,.35)}
+.btnAI:disabled{opacity:.6;cursor:wait;transform:none}
+.aiSpinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .7s linear infinite;display:none}
+.btnAI.loading .aiSpinner{display:block}
+.btnAI.loading .aiIcon{display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.aiSonucBanner{background:linear-gradient(135deg,#f5f3ff,#ede9fe);border:1.5px solid #c4b5fd;border-radius:12px;padding:14px 18px;margin-bottom:14px;display:none}
+.aiSonucBaslik{font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;color:#7c3aed;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.aiSonucOzet{font-size:13px;color:#4c1d95;line-height:1.5}
+.aiTag{display:inline-flex;align-items:center;gap:4px;background:#7c3aed;color:white;border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;margin-right:5px}
+.ilanCard.ai-oneri{border-left-color:#7c3aed;background:linear-gradient(to right,#faf5ff,var(--surface))}
+.ilanCard.ai-oneri .ilanNum{background:#7c3aed}
+.ilanAiOzet{margin-top:8px;padding:8px 12px;background:rgba(124,58,237,.07);border-radius:8px;font-size:12.5px;color:#6d28d9;display:flex;flex-wrap:wrap;gap:8px}
+.ilanAiOzetItem{display:flex;align-items:center;gap:4px;font-weight:600}
 /* PWA Install Banner */
 .pwaBanner{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a5fdb,#1048b8);color:white;border-radius:16px;padding:14px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(26,95,219,.35);z-index:9999;max-width:380px;width:calc(100% - 40px);animation:slideUp .4s ease}
 @keyframes slideUp{from{transform:translateX(-50%) translateY(100px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
@@ -430,9 +446,17 @@ tr:hover td{background:#f8faff}
             <div class="sehirOneriBox" id="sehirOneriBox" style="display:none"></div>
           </div>
           <button class="btnSearch" onclick="araIlanlar()">🔍 Ara</button>
+          <button class="btnAI" id="btnAI" onclick="aiAra()" title="Yapay zeka ile akıllı arama">
+            <span class="aiIcon">✨ AI Ara</span>
+            <div class="aiSpinner"></div>
+          </button>
           <button class="btnReset" onclick="resetArama()">Temizle</button>
           <button class="liveBtn" id="liveBtn" onclick="toggleLive()"><div class="liveDot"></div> Canlı</button>
         </div>
+      </div>
+      <div class="aiSonucBanner" id="aiSonucBanner">
+        <div class="aiSonucBaslik">✨ AI Analizi <span id="aiSonucSayac" style="font-weight:400;color:#6d28d9;font-size:12px"></span></div>
+        <div class="aiSonucOzet" id="aiSonucOzet"></div>
       </div>
       <div class="ilanlarBar"><div class="ilanCount">Gösterilen: <span id="ilanCountNum">0</span> ilan</div></div>
       <div id="ilanList" class="ilanList"><div class="loader"><div class="spinner"></div></div></div>
@@ -937,6 +961,120 @@ document.addEventListener('click', e => {
     oneriAktifIdx = -1;
   }
 });
+
+// ── AI Arama (Gemini) ──────────────────────────────────────────
+let _sonAiSorgu = '';
+let _aiModu = false;
+
+async function aiAra() {
+  const inp = document.getElementById('sehirInput');
+  const serbest = inp ? inp.value.trim() : '';
+  // Soru: serbest metin + etiketler birleşimi
+  const soru = [serbest, ...searchTags].filter(Boolean).join(' ');
+
+  if (!soru) {
+    if (inp) {
+      inp.placeholder = 'Ne arıyorsunuz? (örn: istanbul ankara kapalı TIR)';
+      inp.focus();
+    }
+    return;
+  }
+
+  _sonAiSorgu = soru;
+  _aiModu = true;
+
+  const btn = document.getElementById('btnAI');
+  const banner = document.getElementById('aiSonucBanner');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  banner.style.display = 'none';
+  document.getElementById('ilanList').innerHTML =
+    '<div class="loader"><div class="spinner"></div>' +
+    '<p style="margin-top:12px;color:var(--muted);font-size:13px">✨ AI ilanları analiz ediyor...</p></div>';
+
+  try {
+    const aiRes = await api('/api/ai-ara', {
+      method: 'POST',
+      body: JSON.stringify({ soru })
+    });
+
+    if (!aiRes) { araIlanlar(); return; }
+
+    // Hata varsa göster ama normal aramaya da düş
+    if (aiRes.error) {
+      console.warn('AI hata:', aiRes.error);
+      araIlanlar();
+      return;
+    }
+
+    if (!aiRes.ok || !aiRes.sonuc) { araIlanlar(); return; }
+
+    const sonuc = aiRes.sonuc;
+
+    // Banner
+    banner.style.display = 'block';
+    document.getElementById('aiSonucOzet').textContent = sonuc.ozet || '';
+    document.getElementById('aiSonucSayac').textContent =
+      `— ${sonuc.toplamBulunan || sonuc.ilanlar?.length || 0} ilan bulundu`;
+
+    // Render
+    renderAiIlanlar(sonuc.ilanlar || []);
+    loadStats();
+
+  } catch (e) {
+    console.error('AI fetch hata:', e);
+    araIlanlar();
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('loading');
+  }
+}
+
+function renderAiIlanlar(aiIlanlar) {
+  const list = document.getElementById('ilanList');
+  document.getElementById('ilanCountNum').textContent = aiIlanlar.length;
+
+  if (!aiIlanlar.length) {
+    list.innerHTML = '<div class="emptyState"><div class="emptyIcon">🤖</div>' +
+      '<p>Sorgunuza uygun ilan bulunamadı.</p></div>';
+    return;
+  }
+
+  // Server zaten timestamp'e göre sıraladı, biz sadece render ediyoruz
+  list.innerHTML = aiIlanlar.map((aiIlan, i) => {
+    const metin = aiIlan.orijinalMetin || '';
+    const ts = aiIlan.timestamp || Date.now();
+    const cities = aiIlan.cities || [];
+
+    // Özet satırı — sadece dolu alanları göster
+    const ozetParcalari = [
+      aiIlan.nereden && aiIlan.nereye
+        ? `<span class="ilanAiOzetItem">📍 ${esc(formatSehir(aiIlan.nereden))} → ${esc(formatSehir(aiIlan.nereye))}</span>`
+        : '',
+      aiIlan.aracTipi
+        ? `<span class="ilanAiOzetItem">🚛 ${esc(aiIlan.aracTipi)}</span>`
+        : '',
+      aiIlan.telefon
+        ? `<span class="ilanAiOzetItem">📞 <a href="tel:${aiIlan.telefon.replace(/\D/g,'')}" class="telLink">${esc(aiIlan.telefon)}</a></span>`
+        : ''
+    ].filter(Boolean).join('');
+
+    return `
+    <div class="ilanCard ai-oneri">
+      <div class="ilanMeta">
+        <span class="ilanNum">İlan ${i+1}</span>
+        <span class="aiTag">✨ AI</span>
+        <span class="ilanTime">⏱ ${timeAgo(ts)}</span>
+      </div>
+      ${ozetParcalari ? `<div class="ilanAiOzet">${ozetParcalari}</div>` : ''}
+      <div class="ilanText" style="margin-top:10px">${hlText(metin, searchTags)}</div>
+      ${cities.length ? `<div class="ilanSehirler">${cities.map(c=>`<span class="sehirTag">${esc(formatSehir(c))}</span>`).join('')}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// AI modundayken live arama da AI kullansın
+const _origToggleLive = toggleLive;
 
 function araIlanlar(){
   const s1 = searchTags[0] || undefined;

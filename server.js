@@ -59,7 +59,8 @@ async function sendResetMail(email, username, token) {
   });
 }
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({ secret: SECRET, resave: false, saveUninitialized: false }));
 app.use(passport.initialize());
@@ -215,64 +216,95 @@ app.post('/api/logout', authMiddleware, (req, res) => {
 
 
 // ── Gemini AI Arama ─────────────────────────────
-// İlanları Gemini'ye gönderir, düzenli ve anlamlı şekilde döndürür
 app.post('/api/ai-ara', authMiddleware, async (req, res) => {
   if (!GEMINI_API_KEY) {
-    return res.status(503).json({ error: 'AI özelliği henüz yapılandırılmamış.' });
+    return res.status(503).json({ error: 'AI özelliği yapılandırılmamış.' });
   }
 
-  const { soru, ilanlar } = req.body;
-  if (!soru || !ilanlar || !ilanlar.length) {
-    return res.status(400).json({ error: 'Soru ve ilan listesi gerekli.' });
+  const { soru } = req.body;
+  if (!soru) return res.status(400).json({ error: 'Soru gerekli.' });
+
+  // Tüm aktif ilanları çek (24 saat)
+  const dbRows = ilanAra(null, null);
+  const tumIlanlar = dbRows.map(r => ({
+    ...r,
+    cities: (() => { try { return JSON.parse(r.cities); } catch { return []; } })()
+  }));
+
+  if (!tumIlanlar.length) {
+    return res.json({ ok: true, sonuc: { ozet: 'Sistemde aktif ilan bulunmuyor.', ilanlar: [], toplamBulunan: 0 } });
   }
 
-  // İlanları kısa özet olarak hazırla (token tasarrufu)
-  const ilanOzetleri = ilanlar.slice(0, 30).map((ilan, i) => {
-    const sure = Math.floor((Date.now() - ilan.timestamp) / 60000);
-    return `[${i+1}] ${ilan.text.trim().slice(0, 300)} (${sure} dk önce)`;
-  }).join('\n---\n');
+  // İlanları yapılandırılmış formatta hazırla
+  const ilanListesi = tumIlanlar.map((ilan, i) => {
+    const dakika = Math.floor((Date.now() - ilan.timestamp) / 60000);
+    const sure = dakika < 60 ? `${dakika} dk` : `${Math.floor(dakika/60)} sa ${dakika%60} dk`;
+    const sehirler = (ilan.cities || []).join(' → ');
+    const metin = ilan.text.trim().replace(/\n+/g, ' ').slice(0, 300);
+    return `ID:${i} | SÜRE:${sure} | GÜZERGAH:${sehirler || 'belirsiz'} | ${metin}`;
+  }).join('\n');
 
-  const prompt = `Sen bir Türk lojistik platformu asistanısın. Görevin kullanıcının isteğine göre aşağıdaki nakliye/yük ilanlarını analiz etmek ve en uygun olanları düzenli bir şekilde sunmak.
+  const prompt = `Sen bir Türkiye lojistik sektörü uzmanısın. Nakliye ve yük ilanlarını analiz edip en uygun sonuçları buluyorsun.
 
-KULLANICI İSTEĞİ: "${soru}"
+KULLANICI SORGUSU: "${soru}"
 
-MEVCUT İLANLAR:
-${ilanOzetleri}
+GÖREV:
+1. Sorguyu analiz et: hangi şehir/güzergah isteniyor, araç tipi var mı (TIR, kamyon, açık, kapalı, lowbed vb.), yük türü var mı?
+2. Aşağıdaki ilanlar arasından sorguyla EN ALAKALI olanları seç
+3. Seçilen ilanları SADECE timestamp sırasına göre listele (en yeni önce - SÜRE değeri en küçük olan en üstte)
+4. Alakasız ilanları kesinlikle dahil etme
+5. Eğer hiç uygun ilan yoksa boş liste döndür
 
-GÖREVIN:
-1. Kullanıcının isteğiyle en alakalı ilanları belirle (güzergah, yük tipi, araç tipi vb.)
-2. En uygun ilanları önce göster
-3. Her ilan için kısa bir özet çıkar: nereden-nereye, yük/araç tipi, telefon numarası
-4. Alakasız ilanları gösterme
-5. Türkçe yanıt ver, kısa ve net ol
+ÖNEMLİ KURALLAR:
+- Güzergah aramasında: "istanbul ankara" → istanbuldan ankaraya giden ilanlar (sıra önemli)
+- Araç tipi varsa: sadece o araç tipini içeren ilanları seç
+- Yük türü varsa: o yükü içeren ilanları seç
+- Emin olmadığın ilanları dahil etme, kalite > miktar
+- Sıralama SADECE zaman bazlı olmalı (en yeni önce)
 
-YANIT FORMATI (JSON):
+MEVCUT İLANLAR (${tumIlanlar.length} adet):
+${ilanListesi}
+
+YANIT (sadece geçerli JSON, başka hiçbir şey yazma):
 {
-  "ozet": "Kullanıcı isteğinin kısa yorumu",
+  "ozet": "Sorgu analizi: ne arandı, kaç uygun ilan bulundu",
   "ilanlar": [
     {
-      "sira": 1,
-      "indeks": 3,
-      "nereden": "İstanbul",
-      "nereye": "Ankara", 
-      "yukTipi": "Kapalı TIR",
-      "telefon": "05xx xxx xx xx",
-      "sure": "15 dk önce",
-      "orijinalMetin": "orijinal ilan metni"
+      "id": 0,
+      "nereden": "şehir adı veya boş",
+      "nereye": "şehir adı veya boş",
+      "aracTipi": "TIR/Kamyon/Açık/Kapalı/Lowbed/diğer veya boş",
+      "telefon": "telefon numarası veya boş",
+      "orijinalMetin": "ilanın tam metni"
     }
   ],
-  "toplamBulunan": 5
-}
-
-Sadece JSON döndür, başka hiçbir şey yazma.`;
+  "toplamBulunan": 0
+}`;
 
   try {
     const sonuc = await geminiIste(prompt);
+
+    // Gemini'nin döndürdüğü id'lere göre orijinal timestamp'i ekle ve sırala
+    if (sonuc.ilanlar && sonuc.ilanlar.length) {
+      sonuc.ilanlar = sonuc.ilanlar
+        .map(aiIlan => {
+          const orig = tumIlanlar[aiIlan.id] || {};
+          return {
+            ...aiIlan,
+            timestamp: orig.timestamp || 0,
+            orijinalMetin: orig.text || aiIlan.orijinalMetin || '',
+            cities: orig.cities || []
+          };
+        })
+        // EN YENİDEN EN ESKİYE sırala
+        .sort((a, b) => b.timestamp - a.timestamp);
+    }
+
     logEkle({ userId: req.user.id, action: 'ai_search', detail: soru.slice(0, 100), ipAddress: getIP(req) });
     res.json({ ok: true, sonuc });
   } catch (err) {
     console.error('Gemini hatası:', err.message);
-    res.status(500).json({ error: 'AI yanıt vermedi, normal arama kullanılıyor.' });
+    res.status(500).json({ error: err.message });
   }
 });
 
