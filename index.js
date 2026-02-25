@@ -254,14 +254,14 @@ function formatResults(ilanlar, searchCities) {
 const _samsunGonderildi = new Set();
 
 const SAMSUN_ILCELERI = [
-  'samsun','atakum','canik','ilkadim','tekkeköy','bafra','çarşamba','terme',
+  'samsun','atakum','canik','ilkadım','tekkeköy','bafra','çarşamba','terme',
   'alaçam','asarcık','ayvacık','havza','kavak','ladik','ondokuzmayıs',
   'salıpazarı','vezirköprü','yakakent'
 ];
 
 function isSamsunIlani(text) {
-  const norm = normalize(text);
-  return SAMSUN_ILCELERI.some(ilce => (' ' + norm + ' ').includes(' ' + normalize(ilce) + ' '));
+  const norm = ' ' + normalize(text) + ' ';
+  return SAMSUN_ILCELERI.some(ilce => norm.includes(' ' + normalize(ilce) + ' '));
 }
 
 async function samsunBildirimiGonder(ilan) {
@@ -304,26 +304,29 @@ class IlanStore {
       let matched = false;
 
       if (!c2) {
-        // Tek şehir: tüm metinde geçiyor mu?
-        const t = ' ' + normalize(ilan.text) + ' ';
-        matched = t.includes(' ' + c1 + ' ');
+        // Tek şehir: cities listesinde var mı veya metinde geçiyor mu?
+        if (ilan.cities && ilan.cities.some(c => normalize(c) === c1)) {
+          matched = true;
+        } else {
+          const t = ' ' + normalize(ilan.text) + ' ';
+          matched = t.includes(' ' + c1 + ' ');
+        }
       } else {
-        // İki şehir: AYNI SATIRDA ikisi birden geçiyor mu?
-        const lines = ilan.text.split('\n');
-        for (const line of lines) {
-          const t = ' ' + normalize(line) + ' ';
-          const m1 = t.includes(' ' + c1 + ' ');
-          const m2 = t.includes(' ' + c2 + ' ');
-          if (m1 && m2) { matched = true; break; }
+        // İki şehir: cities listesinde sıra doğru mu?
+        if (ilan.cities && ilan.cities.length >= 2) {
+          const i1 = ilan.cities.findIndex(c => normalize(c) === c1);
+          const i2 = ilan.cities.findIndex(c => normalize(c) === c2);
+          if (i1 !== -1 && i2 !== -1 && i1 < i2) {
+            matched = true;
+          }
         }
 
-        // Satır bazlı bulunamadıysa tüm metne bak (tek satır ilanlar için)
+        // cities'de bulunamadıysa metin bazlı pozisyon kontrolü
         if (!matched) {
-          const lines2 = ilan.text.split('\n').filter(l => l.trim().length > 0);
-          if (lines2.length <= 2) {
-            const t = ' ' + normalize(ilan.text) + ' ';
-            matched = t.includes(' ' + c1 + ' ') && t.includes(' ' + c2 + ' ');
-          }
+          const text = normalize(ilan.text);
+          const pos1 = text.indexOf(c1);
+          const pos2 = text.indexOf(c2);
+          matched = pos1 !== -1 && pos2 !== -1 && pos1 < pos2;
         }
       }
 
@@ -385,6 +388,9 @@ client.on('message_create', async (msg) => {
 
     // ── Özel sohbet: arama ──
     if (!chat.isGroup) {
+      // Sadece bize gelen mesajlara cevap ver, kendi gönderdiğimize değil
+      if (msg.fromMe) return;
+
       const parts = body.trim().split(/\s+/);
       const known = parts.filter(p => CONFIG.CITIES.some(c => normalize(c) === normalize(p)));
       if (known.length === 0 || parts.length > 2) return;

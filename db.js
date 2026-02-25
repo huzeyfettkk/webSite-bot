@@ -123,15 +123,17 @@ function ilanAra(sehir1, sehir2) {
     return _stmtIlanlarHepsi.all(since);
   }
 
-  // cities alanı JSON array olarak saklı: '["samsun","bafra"]'
-  // LIKE ile arama yeterli — tam kelime için tırnak içinde ara
   const like1 = `%"${sehir1.toLowerCase()}"%`;
-
   let rows = _stmtIlanSehir1.all(since, like1);
 
   if (sehir2) {
-    const like2 = `%"${sehir2.toLowerCase()}"%`;
-    rows = rows.filter(r => r.cities.includes(`"${sehir2.toLowerCase()}"`));
+    rows = rows.filter(r => {
+      const cities = JSON.parse(r.cities || '[]');
+      const i1 = cities.findIndex(c => c.toLowerCase() === sehir1.toLowerCase());
+      const i2 = cities.findIndex(c => c.toLowerCase() === sehir2.toLowerCase());
+      // Her ikisi de bulunmalı VE sehir1 sehir2'den önce gelmeli
+      return i1 !== -1 && i2 !== -1 && i1 < i2;
+    });
   }
 
   return rows;
