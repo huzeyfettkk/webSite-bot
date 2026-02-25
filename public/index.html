@@ -371,7 +371,10 @@ tr:hover td{background:#f8faff}
       <div class="pageHeader"><div class="pageTitle">İlanlar</div><div class="pageSubtitle">Son 1 saat içindeki aktif lojistik ilanları</div></div>
       <div class="statsGrid">
         <div class="statCard"><div class="statLabel">Toplam İlan</div><div class="statValue blue" id="statTotal">—</div></div>
-        <div class="statCard"><div class="statLabel">Bot Durumu</div><div class="statValue green" id="statDurum">—</div></div>
+        <div class="statCard" style="cursor:pointer;border:2px dashed var(--primary);background:linear-gradient(135deg,#eff6ff,#dbeafe)" onclick="pwaInstallOrGuide()" id="pwaCard">
+          <div class="statLabel">📲 Mobil Uygulama</div>
+          <div class="statValue" style="font-size:15px;color:var(--primary)" id="pwaCardText">Ana Ekrana Ekle</div>
+        </div>
         <div class="statCard" style="cursor:pointer" onclick="document.getElementById('bildirimToggle').click()" id="bildirimKart">
           <div class="statLabel">🔔 Bildirimler</div>
           <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
@@ -381,10 +384,6 @@ tr:hover td{background:#f8faff}
             </label>
             <span style="font-size:13px;font-weight:600;color:var(--text)" id="bildirimKartText">Kapalı</span>
           </div>
-        </div>
-        <div class="statCard" style="cursor:pointer;border:2px dashed var(--primary);background:linear-gradient(135deg,#eff6ff,#dbeafe)" onclick="pwaInstallOrGuide()" id="pwaCard">
-          <div class="statLabel">📲 Mobil Uygulama</div>
-          <div class="statValue" style="font-size:15px;color:var(--primary)" id="pwaCardText">Ana Ekrana Ekle</div>
         </div>
       </div>
       <div class="searchCard">
