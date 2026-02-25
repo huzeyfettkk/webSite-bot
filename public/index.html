@@ -191,18 +191,17 @@ tr:hover td{background:#f8faff}
 .profileMsg.ok{background:#f0fdf4;color:var(--success);border:1px solid #bbf7d0}
 .profileMsg.err{background:#fef2f2;color:var(--danger);border:1px solid #fecaca}
 
-/* Arama etiket sistemi */
-.searchTagRow{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:0}
-.searchTagRow:empty{margin-bottom:0}
-.searchTag{display:flex;align-items:center;gap:5px;background:var(--accent);color:white;border-radius:20px;padding:4px 10px 4px 12px;font-size:13px;font-weight:600;animation:fadeUp .15s ease}
-.searchTag .tagRemove{background:rgba(255,255,255,.3);border:none;color:white;border-radius:50%;width:16px;height:16px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;flex-shrink:0}
-.searchTag .tagRemove:hover{background:rgba(255,255,255,.5)}
-.searchTag:first-child::before{content:'';display:none}
-.searchTag:nth-child(2)::before{content:'→';margin-right:2px;opacity:.7;font-size:11px}
-.sehirOneriBox{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1.5px solid var(--accent);border-radius:10px;box-shadow:var(--shadow-md);z-index:100;max-height:200px;overflow-y:auto}
+/* Token-input arama */
+.tokenInput{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 12px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;cursor:text;transition:border-color .2s,box-shadow .2s;min-height:44px}
+.tokenInput:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(26,95,219,.10)}
+.searchTag{display:inline-flex;align-items:center;gap:4px;background:var(--accent);color:white;border-radius:6px;padding:3px 8px 3px 10px;font-size:13px;font-weight:600;animation:fadeUp .15s ease;white-space:nowrap}
+.searchTag button{background:rgba(255,255,255,.25);border:none;color:white;border-radius:4px;width:16px;height:16px;cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;flex-shrink:0}
+.searchTag button:hover{background:rgba(255,255,255,.45)}
+.tokenRealInput{border:none;outline:none;background:transparent;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;color:var(--text);min-width:180px;flex:1;padding:2px 0}
+.sehirOneriBox{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1.5px solid var(--accent);border-radius:10px;box-shadow:var(--shadow-md);z-index:100;max-height:220px;overflow-y:auto}
 .sehirOneriItem{padding:10px 14px;cursor:pointer;font-size:14px;transition:background .1s}
 .sehirOneriItem:hover,.sehirOneriItem.aktif{background:var(--accent);color:white}
-.searchInputWrap{position:relative}
+.searchInputWrap{position:relative;flex:1}
 
 /* PWA Install Banner */
 .pwaBanner{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a5fdb,#1048b8);color:white;border-radius:16px;padding:14px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(26,95,219,.35);z-index:9999;max-width:380px;width:calc(100% - 40px);animation:slideUp .4s ease}
@@ -419,10 +418,12 @@ tr:hover td{background:#f8faff}
         </div>
       </div>
       <div class="searchCard">
-        <div class="searchTagRow" id="searchTagRow"></div>
-        <div class="searchRow">
-          <div class="searchInputWrap" style="flex:1;position:relative">
-            <input type="text" class="searchInput" id="sehirInput" placeholder="Şehir veya ilçe yazın, Enter ile ekleyin..." autocomplete="off" oninput="sehirOneri()" onkeydown="sehirKeydown(event)">
+        <div class="searchRow" style="align-items:flex-start">
+          <div class="searchInputWrap">
+            <div class="tokenInput" id="tokenInputBox" onclick="document.getElementById('sehirInput').focus()">
+              <div id="searchTagRow" style="display:contents"></div>
+              <input type="text" class="tokenRealInput" id="sehirInput" placeholder="Şehir veya ilçe ekleyin..." autocomplete="off" oninput="sehirOneri()" onkeydown="sehirKeydown(event)">
+            </div>
             <div class="sehirOneriBox" id="sehirOneriBox" style="display:none"></div>
           </div>
           <button class="btnSearch" onclick="araIlanlar()">🔍 Ara</button>
@@ -694,7 +695,8 @@ async function loadIlanlar(s1,s2){
   if(s1){url+='?sehir1='+encodeURIComponent(s1);if(s2)url+='&sehir2='+encodeURIComponent(s2);}
   const data=await api(url);if(!data)return;
   const ilanlar=data.ilanlar||data;
-  const matchedTerms=data.matchedTerms||[s1,s2].filter(Boolean);
+  // matchedTerms: server'dan gelen + arama etiketlerinin kendisi
+  const matchedTerms=[...(data.matchedTerms||[]),...searchTags].filter(Boolean);
   if(data.hata){document.getElementById('ilanCountNum').textContent='0';document.getElementById('ilanList').innerHTML='<div class="emptyState"><div class="emptyIcon">🔍</div><p>'+esc(data.hata)+'</p></div>';return;}
   renderIlanlar(ilanlar,matchedTerms);loadStats();
 }
@@ -773,7 +775,10 @@ let oneriAktifIdx = -1;
 function renderSearchTags(){
   const row = document.getElementById('searchTagRow');
   if(!row) return;
-  row.innerHTML = searchTags.map((t,i) => `<div class="searchTag">${i===1?'<span style="opacity:.6;font-size:11px;margin-right:2px">→</span>':''}${esc(t)}<button class="tagRemove" onclick="removeSearchTag(${i})">✕</button></div>`).join('');
+  row.innerHTML = searchTags.map((t,i) => `<span class="searchTag">${esc(t.charAt(0).toUpperCase()+t.slice(1))}<button onclick="removeSearchTag(${i})">✕</button></span>`).join('');
+  // Placeholder güncelle
+  const inp = document.getElementById('sehirInput');
+  if(inp) inp.placeholder = searchTags.length===0 ? 'Şehir veya ilçe ekleyin...' : searchTags.length===1 ? 'Varış şehri ekleyin (opsiyonel)...' : '';
 }
 
 function removeSearchTag(i){
@@ -783,9 +788,17 @@ function removeSearchTag(i){
 }
 
 function sehirEkle(sehir){
-  if(!sehir) return;
-  if(searchTags.length >= 2){ searchTags[1]=sehir; }
-  else if(!searchTags.includes(sehir)){ searchTags.push(sehir); }
+  if(!sehir || !sehir.trim()) return;
+  const temiz = sehir.trim();
+  // Aynı şehir eklenmişse atla
+  if(searchTags.map(s=>s.toLowerCase()).includes(temiz.toLowerCase())) {
+    document.getElementById('sehirInput').value='';
+    document.getElementById('sehirOneriBox').style.display='none';
+    return;
+  }
+  // Max 2 — ikincisi varsa değiştir
+  if(searchTags.length >= 2){ searchTags[1] = temiz; }
+  else { searchTags.push(temiz); }
   renderSearchTags();
   const inp = document.getElementById('sehirInput');
   if(inp) inp.value = '';
