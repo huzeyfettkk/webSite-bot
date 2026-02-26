@@ -445,32 +445,35 @@ client.on('message_create', async (msg) => {
   try {
     const body = msg.body || '';
     if (!body.trim()) return;
+
+    // Kendi gönderdiğimiz mesajlara HİÇBİR ZAMAN cevap verme (grup veya özel)
+    if (msg.fromMe) return;
+
     const chat = await msg.getChat();
 
-    // ── Özel sohbet: arama ──
+    // ── Özel sohbet: sadece şehir araması ──
     if (!chat.isGroup) {
-      if (msg.fromMe) return;
-
       const raw = body.trim();
 
-      // ── Doğal dil şehir çıkarıcı ──────────────────────────────
-      // "istanbul samsun", "istanbul'dan samsun'a", "istanbuldan samsuna",
-      // "istanbul - samsun", "istanbul > samsun", "İSTANBUL SAMSUN" hepsini anlar
+      // Şehir çıkarıcı — sadece şehir isimleri içeriyorsa cevap ver
       function sehirCikar(metin) {
-        // 1. Normalize: Türkçe harf + küçük harf + özel karakterleri boşluğa çevir
         const temiz = normalize(metin)
-          .replace(/dan\b/g, ' ').replace(/den\b/g, ' ')
-          .replace(/a\b/g, ' ').replace(/e\b/g, ' ')
-          .replace(/[-_>→|\/\\]/g, ' ')
+          .replace(/\bdan\b/g, ' ').replace(/\bden\b/g, ' ')
+          .replace(/\bdan$/g, ' ').replace(/\bden$/g, ' ')
+          .replace(/\ba\b/g, ' ').replace(/\be\b/g, ' ')
+          .replace(/[-_>→|\/\\,;]/g, ' ')
           .replace(/\s+/g, ' ').trim();
 
         const kelimeler = temiz.split(' ').filter(Boolean);
 
-        // 2. Tek kelime ve çok kelimeli şehir isimlerini bul (en uzundan başla)
+        // Mesaj çok uzunsa veya şehir dışı kelimeler çok fazlaysa arama değil — cevap verme
+        // Sadece 1-4 kelimeli kısa mesajlara cevap ver
+        if (kelimeler.length > 5) return [];
+
         const bulunanlar = [];
         const kullanildi = new Set();
 
-        // Önce 2 kelimeli eşleşmeleri dene (kahramanmaraş gibi birleşik geçebilir)
+        // 2 kelimeli şehirler (kahramanmaraş)
         for (let i = 0; i < kelimeler.length - 1; i++) {
           if (kullanildi.has(i) || kullanildi.has(i+1)) continue;
           const ikili = kelimeler[i] + ' ' + kelimeler[i+1];
@@ -481,7 +484,7 @@ client.on('message_create', async (msg) => {
           }
         }
 
-        // Sonra tek kelimeli eşleşmeler
+        // Tek kelimeli şehirler
         for (let i = 0; i < kelimeler.length; i++) {
           if (kullanildi.has(i)) continue;
           const eslesen = CONFIG.CITIES.find(c => normalize(c) === kelimeler[i]);
@@ -491,39 +494,33 @@ client.on('message_create', async (msg) => {
           }
         }
 
-        // Pozisyona göre sırala (metindeki geçiş sırasını koru)
+        // Şehir dışı kelime varsa ve şehir sayısı az ise — belirsiz mesaj, cevap verme
+        const sehirDisiKelime = kelimeler.filter((_, i) => !kullanildi.has(i));
+        const sehirDisiAnlamli = sehirDisiKelime.filter(k => k.length > 2);
+        if (sehirDisiAnlamli.length > 1) return []; // Şehir dışı çok kelime var — normal sohbet
+
         bulunanlar.sort((a, b) => a.pos - b.pos);
         return bulunanlar.map(b => b.sehir);
       }
 
       const sehirler = sehirCikar(raw);
 
-      if (sehirler.length === 0) {
-        // Hiç şehir bulunamadı — yardım mesajı gönder
-        await msg.reply(
-          '🤖 *YükleGit Arama Botu*\n\n' +
-          'Şehir adı yazarak arama yapabilirsiniz:\n\n' +
-          '▸ Tek şehir: `samsun`\n' +
-          '▸ Güzergah: `istanbul samsun`\n' +
-          '▸ Doğal dil: `istanbuldan samsuna`\n\n' +
-          '_Son 1 saatteki ilanlar gösterilir._'
-        );
-        return;
-      }
+      // Hiç şehir bulunamadıysa CEVAP VERME — normal sohbet mesajı olabilir
+      if (sehirler.length === 0) return;
 
       const city1 = sehirler[0];
       const city2 = sehirler[1] || null;
       const results = store.search(city1, city2);
 
-      // Sonuç sayısını da belirt
       const baslik = city2
-        ? `🔍 *${city1.toUpperCase()} → ${city2.toUpperCase()}* araması`
-        : `🔍 *${city1.toUpperCase()}* araması`;
-      const sonucSayisi = `📦 ${results.length} ilan bulundu\n${'─'.repeat(30)}\n\n`;
+        ? `🔍 *${city1.toUpperCase()} → ${city2.toUpperCase()}*`
+        : `🔍 *${city1.toUpperCase()}*`;
+      const sonucSayisi = `📦 ${results.length} ilan\n${'─'.repeat(28)}\n\n`;
 
-      await msg.reply(baslik + '\n' + sonucSayisi + formatResults(results, sehirler).replace(/^❌.*/, ''));
       if (results.length === 0) {
-        await msg.reply('❌ Aradığınız kriterlere uygun aktif ilan bulunamadı.\n_(Son 1 saat içindeki ilanlar gösterilir)_');
+        await msg.reply(baslik + '\n❌ Uygun ilan bulunamadı.\n_(Son 1 saat içindeki ilanlar gösterilir)_');
+      } else {
+        await msg.reply(baslik + '\n' + sonucSayisi + formatResults(results, sehirler));
       }
       console.log(`🔍 "${city1}${city2?' → '+city2:''}" | ${results.length} sonuç`);
       return;

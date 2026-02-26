@@ -206,7 +206,24 @@ tr:hover td{background:#f8faff}
 .sehirOneriItem.eklenmis{opacity:.5;cursor:default}
 .searchInputWrap{position:relative;flex:1}
 
-/* AI Arama */
+/* Çift Arama Kutusu */
+.searchDual{display:flex;flex-direction:column;gap:8px;flex:1}
+.searchDualRow{display:flex;align-items:center;gap:8px}
+.searchDualLabel{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;width:52px;flex-shrink:0}
+.searchDualInput{display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;cursor:text;transition:border-color .2s,box-shadow .2s;min-height:42px;flex:1;position:relative}
+.searchDualInput:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(26,95,219,.10)}
+.searchDualInput.has-tag{border-color:var(--accent);background:rgba(26,95,219,.04)}
+.dualRealInput{border:none;outline:none;background:transparent;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;color:var(--text);min-width:120px;flex:1;padding:2px 0}
+.dualTag{display:inline-flex;align-items:center;gap:5px;background:var(--accent);color:white;border-radius:6px;padding:3px 9px;font-size:13px;font-weight:600;white-space:nowrap}
+.dualTag button{background:none;border:none;color:rgba(255,255,255,.8);cursor:pointer;font-size:13px;padding:0;line-height:1;display:flex;align-items:center}
+.dualTag button:hover{color:white}
+.searchDivider{display:flex;align-items:center;padding-left:60px}
+.searchDividerLine{flex:1;height:1px;background:var(--border);position:relative}
+.searchDividerArrow{font-size:14px;color:var(--muted);margin:0 8px;opacity:.6}
+.dualOneriBox{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1.5px solid var(--accent);border-radius:10px;box-shadow:var(--shadow-md);z-index:200;max-height:220px;overflow-y:auto}
+.dualOneriItem{padding:10px 14px;cursor:pointer;font-size:14px;transition:background .1s}
+.dualOneriItem:hover,.dualOneriItem.aktif{background:var(--accent);color:white}
+.dualOneriItem.eklenmis{opacity:.5;cursor:default}
 .btnAI{padding:9px 16px;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:white;border:none;border-radius:8px;font-family:'Outfit',sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:6px}
 .btnAI:hover{background:linear-gradient(135deg,#6d28d9,#4338ca);transform:translateY(-1px);box-shadow:0 4px 12px rgba(124,58,237,.35)}
 .btnAI:disabled{opacity:.6;cursor:wait;transform:none}
@@ -437,21 +454,40 @@ tr:hover td{background:#f8faff}
         </div>
       </div>
       <div class="searchCard">
-        <div class="searchRow" style="align-items:flex-start">
-          <div class="searchInputWrap">
-            <div class="tokenInput" id="tokenInputBox" onclick="document.getElementById('sehirInput').focus()">
-              <div id="searchTagRow" style="display:contents"></div>
-              <input type="text" class="tokenRealInput" id="sehirInput" placeholder="Şehir veya ilçe ekleyin..." autocomplete="off" oninput="sehirOneri()" onkeydown="sehirKeydown(event)">
+        <div class="searchRow" style="align-items:flex-start;gap:10px">
+          <div class="searchDual">
+            <!-- Nereden (çoklu) -->
+            <div class="searchDualRow">
+              <span class="searchDualLabel">📍 Nereden</span>
+              <div class="searchDualInput" id="neredenWrap" onclick="focusDualInput('nereden')">
+                <div id="neredenTags" style="display:contents"></div>
+                <input type="text" class="dualRealInput" id="neredenInput" placeholder="Kalkış şehri ekleyin..." autocomplete="off"
+                  oninput="dualOneri('nereden')" onkeydown="dualKeydown(event,'nereden')">
+                <div class="dualOneriBox" id="neredenOneriBox" style="display:none"></div>
+              </div>
             </div>
-            <div class="sehirOneriBox" id="sehirOneriBox" style="display:none"></div>
+            <!-- Ayırıcı -->
+            <div class="searchDivider"><div class="searchDividerArrow">↕</div><div class="searchDividerLine"></div></div>
+            <!-- Nereye (çoklu) -->
+            <div class="searchDualRow">
+              <span class="searchDualLabel">🏁 Nereye</span>
+              <div class="searchDualInput" id="nereyeWrap" onclick="focusDualInput('nereye')">
+                <div id="nereyeTags" style="display:contents"></div>
+                <input type="text" class="dualRealInput" id="nereyeInput" placeholder="Varış şehri ekleyin (opsiyonel)..." autocomplete="off"
+                  oninput="dualOneri('nereye')" onkeydown="dualKeydown(event,'nereye')">
+                <div class="dualOneriBox" id="nereyeOneriBox" style="display:none"></div>
+              </div>
+            </div>
           </div>
-          <button class="btnSearch" onclick="araIlanlar()">🔍 Ara</button>
-          <button class="btnAI" id="btnAI" onclick="aiAra()" title="Yapay zeka ile akıllı arama">
-            <span class="aiIcon">✨ AI Ara</span>
-            <div class="aiSpinner"></div>
-          </button>
-          <button class="btnReset" onclick="resetArama()">Temizle</button>
-          <button class="liveBtn" id="liveBtn" onclick="toggleLive()"><div class="liveDot"></div> Canlı</button>
+          <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;padding-top:2px">
+            <button class="btnSearch" onclick="araIlanlar()" style="width:100%">🔍 Ara</button>
+            <button class="btnAI" id="btnAI" onclick="aiAra()" title="AI ile akıllı arama" style="width:100%">
+              <span class="aiIcon">✨ AI Ara</span>
+              <div class="aiSpinner"></div>
+            </button>
+            <button class="btnReset" onclick="resetArama()" style="width:100%">Temizle</button>
+            <button class="liveBtn" id="liveBtn" onclick="toggleLive()" style="width:100%"><div class="liveDot"></div> Canlı</button>
+          </div>
         </div>
       </div>
       <div class="aiSonucBanner" id="aiSonucBanner">
@@ -723,10 +759,67 @@ async function loadIlanlar(s1,s2){
   const data=await api(url);if(!data)return;
   const ilanlar=data.ilanlar||data;
   if(data.hata){document.getElementById('ilanCountNum').textContent='0';document.getElementById('ilanList').innerHTML='<div class="emptyState"><div class="emptyIcon">🔍</div><p>'+esc(data.hata)+'</p></div>';return;}
-  // matchedTerms: server'dan gelen (il + tüm ilçeler) + arama etiketleri — benzersiz
-  const allTerms = new Set([...(data.matchedTerms||[]),...searchTags].map(t=>t.toLowerCase()).filter(Boolean));
+  const allTerms = new Set([...(data.matchedTerms||[]),...getSearchTags()].map(t=>t.toLowerCase()).filter(Boolean));
   const matchedTerms = [...allTerms];
   renderIlanlar(ilanlar,matchedTerms);loadStats();
+}
+
+// Çoklu nereden × nereye araması
+async function loadIlanlarCoklu(neredenList, nereyeList){
+  document.getElementById('ilanList').innerHTML='<div class="loader"><div class="spinner"></div></div>';
+
+  // Seçim yoksa tümünü göster
+  if(!neredenList.length && !nereyeList.length){ loadIlanlar(); return; }
+
+  // Kombinasyonları oluştur
+  // Sadece nereden varsa: her nereden için tekli arama
+  // Sadece nereye varsa: her nereye için tekli arama (s1 olarak)
+  // İkisi de varsa: her nereden × nereye kombinasyonu
+  const kombinasyonlar = [];
+  if(neredenList.length && nereyeList.length){
+    for(const s1 of neredenList)
+      for(const s2 of nereyeList)
+        kombinasyonlar.push({s1, s2});
+  } else if(neredenList.length){
+    for(const s1 of neredenList) kombinasyonlar.push({s1, s2:null});
+  } else {
+    for(const s1 of nereyeList) kombinasyonlar.push({s1, s2:null});
+  }
+
+  try {
+    // Paralel istekler
+    const sonuclar = await Promise.all(kombinasyonlar.map(({s1,s2})=>{
+      let url='/api/ilanlar?sehir1='+encodeURIComponent(s1);
+      if(s2) url+='&sehir2='+encodeURIComponent(s2);
+      return api(url);
+    }));
+
+    // Birleştir — hash bazlı duplicate temizle
+    const ilanMap = new Map();
+    const allMatchedTerms = new Set(getSearchTags().map(t=>t.toLowerCase()));
+    for(const data of sonuclar){
+      if(!data||data.hata) continue;
+      (data.matchedTerms||[]).forEach(t=>allMatchedTerms.add(t.toLowerCase()));
+      (data.ilanlar||[]).forEach(ilan=>{
+        const key = ilan.hash||String(ilan.id||ilan.timestamp);
+        if(!ilanMap.has(key)) ilanMap.set(key, ilan);
+      });
+    }
+
+    // En yeniden en eskiye sırala
+    const ilanlar = [...ilanMap.values()].sort((a,b)=>b.timestamp-a.timestamp);
+
+    if(!ilanlar.length){
+      document.getElementById('ilanCountNum').textContent='0';
+      document.getElementById('ilanList').innerHTML='<div class="emptyState"><div class="emptyIcon">📭</div><p>Aradığınız kriterlere uygun ilan bulunamadı.</p></div>';
+      return;
+    }
+    renderIlanlar(ilanlar,[...allMatchedTerms]);
+    loadStats();
+  } catch(e){
+    console.error('Çoklu arama hata:',e);
+    loadIlanlar(neredenList[0],nereyeList[0]);
+  }
 }
 
 function renderIlanlar(ilanlar,matchedTerms=[]){
@@ -812,11 +905,12 @@ function timeAgo(ts){
   const h=Math.floor(d/3600),m=Math.floor((d%3600)/60);return m>0?h+' sa '+m+' dk önce':h+' sa önce';
 }
 
-// ── Arama — Etiket Sistemi (Kusursuz Versiyon) ─────────────────
-let searchTags = [];
-let oneriAktifIdx = -1;
+// ── Çoklu Arama Kutusu (Nereden / Nereye) ──────────────────────
+// Her iki tarafta da birden fazla şehir seçilebilir
+// "İstanbul veya Ankara'dan → Samsun veya Trabzon'a" gibi
+const dualState = { nereden: [], nereye: [] };
+const dualOneriIdx = { nereden: -1, nereye: -1 };
 
-// Evrensel Türkçe normalize — her yerden çağrılabilir
 function normTR(s){
   return String(s||'')
     .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
@@ -828,278 +922,181 @@ function normTR(s){
     .toLowerCase().trim();
 }
 
-// Etiketi güzel formatla (her kelimenin ilk harfi büyük)
+// Geriye dönük uyumluluk — aiAra ve hlText için
+function getSearchTags(){
+  return [...dualState.nereden, ...dualState.nereye];
+}
+
 function formatSehir(s){
-  return s.split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+  return String(s||'').split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
 }
 
-function renderSearchTags(){
-  const row = document.getElementById('searchTagRow');
-  if(!row) return;
-  row.innerHTML = searchTags.map((t,i) => 
-    `<span class="searchTag">${esc(formatSehir(t))}<button onclick="removeSearchTag(${i})" title="Kaldır">✕</button></span>`
-  ).join('');
-  const inp = document.getElementById('sehirInput');
-  if(!inp) return;
-  if(searchTags.length === 0)       inp.placeholder = 'Kalkış şehri veya ilçesi yazın...';
-  else if(searchTags.length === 1)  inp.placeholder = 'Varış şehri ekleyin (opsiyonel)...';
-  else                              inp.placeholder = '';
-  // Max 2 varsa input'u devre dışı bırak
-  inp.disabled = searchTags.length >= 2;
-  if(inp.disabled){ inp.placeholder=''; }
+function focusDualInput(hangi){
+  const inp = document.getElementById(hangi+'Input');
+  if(inp && inp.style.display !== 'none') inp.focus();
 }
 
-function removeSearchTag(i){
-  searchTags.splice(i, 1);
-  renderSearchTags();
-  const inp = document.getElementById('sehirInput');
-  if(inp){ inp.disabled = false; inp.focus(); }
+function renderDualTags(hangi){
+  const tagsEl = document.getElementById(hangi+'Tags');
+  const inp    = document.getElementById(hangi+'Input');
+  const wrap   = document.getElementById(hangi+'Wrap');
+  if(!tagsEl) return;
+  const list = dualState[hangi];
+
+  tagsEl.innerHTML = list.map((s,i) => `<span class="dualTag">${esc(formatSehir(s))}<button onmousedown="event.preventDefault();removeDualTag('${hangi}',${i})" title="Kaldır">✕</button></span>`).join('');
+
+  // Placeholder güncelle
+  if(inp){
+    inp.style.display = '';
+    if(list.length === 0){
+      inp.placeholder = hangi==='nereden' ? 'Kalkış şehri ekleyin...' : 'Varış şehri ekleyin (opsiyonel)...';
+    } else {
+      inp.placeholder = '+ şehir ekle...';
+    }
+  }
+  if(wrap) wrap.classList.toggle('has-tag', list.length > 0);
+}
+
+function removeDualTag(hangi, idx){
+  dualState[hangi].splice(idx, 1);
+  renderDualTags(hangi);
   araIlanlar();
 }
 
-function sehirEkle(sehir){
+function dualEkle(hangi, sehir){
   if(!sehir) return;
   const temiz = sehir.trim();
   if(!temiz) return;
-  // Zaten eklenmiş mi? (normalize karşılaştırma)
-  if(searchTags.some(s => normTR(s) === normTR(temiz))){
-    const inp = document.getElementById('sehirInput');
-    if(inp) inp.value = '';
-    document.getElementById('sehirOneriBox').style.display = 'none';
+  // Aynı şehir zaten ekliyse atla
+  if(dualState[hangi].some(s => normTR(s) === normTR(temiz))) {
+    const inp = document.getElementById(hangi+'Input');
+    if(inp){ inp.value=''; }
+    const box = document.getElementById(hangi+'OneriBox');
+    if(box) box.style.display='none';
     return;
   }
-  // Max 2
-  if(searchTags.length >= 2) searchTags[1] = temiz;
-  else searchTags.push(temiz);
-  renderSearchTags();
-  const inp = document.getElementById('sehirInput');
-  if(inp) inp.value = '';
-  document.getElementById('sehirOneriBox').style.display = 'none';
-  oneriAktifIdx = -1;
+  dualState[hangi].push(temiz);
+  renderDualTags(hangi);
+  const box = document.getElementById(hangi+'OneriBox');
+  if(box) box.style.display='none';
+  dualOneriIdx[hangi] = -1;
+  const inp = document.getElementById(hangi+'Input');
+  if(inp){ inp.value=''; inp.focus(); }
+  // Nereden'e ilk şehir eklenince Nereye'ye geç (sadece nereden listesi henüz 1'deyse)
+  if(hangi==='nereden' && dualState.nereden.length===1 && dualState.nereye.length===0){
+    setTimeout(()=>{ const ni=document.getElementById('nereyeInput'); if(ni) ni.focus(); }, 100);
+  }
   araIlanlar();
 }
 
-function sehirKeydown(e){
-  const box = document.getElementById('sehirOneriBox');
-  const items = box ? box.querySelectorAll('.sehirOneriItem') : [];
-  const boxAcik = box && box.style.display !== 'none' && items.length > 0;
+function dualOneri(hangi){
+  const inp = document.getElementById(hangi+'Input');
+  const box = document.getElementById(hangi+'OneriBox');
+  if(!inp||!box) return;
+  const val = inp.value.trim();
+  if(!val||val.length<1){ box.style.display='none'; return; }
+  const nval = normTR(val);
+  const tumSehirler = window._tumSehirler||[];
+  const baslayan = tumSehirler.filter(s=>normTR(s).startsWith(nval));
+  const iceren   = tumSehirler.filter(s=>!normTR(s).startsWith(nval)&&normTR(s).includes(nval));
+  const eslesme  = [...baslayan,...iceren].slice(0,10);
+  if(!eslesme.length){ box.style.display='none'; return; }
+  dualOneriIdx[hangi] = -1;
+  // Zaten seçili olanları işaretle
+  const seciliSet = new Set([...dualState.nereden,...dualState.nereye].map(normTR));
+  box.innerHTML = eslesme.map(s=>{
+    const secili = seciliSet.has(normTR(s));
+    return `<div class="dualOneriItem${secili?' eklenmis':''}" data-val="${esc(s)}"
+      onmousedown="event.preventDefault();dualEkle('${hangi}','${esc(s)}')">${esc(formatSehir(s))}${secili?' <small style=\'opacity:.5\'>(eklendi)</small>':''}</div>`;
+  }).join('');
+  box.style.display='block';
+}
 
-  if(e.key === 'ArrowDown'){
+function dualKeydown(e, hangi){
+  const box   = document.getElementById(hangi+'OneriBox');
+  const items = box ? box.querySelectorAll('.dualOneriItem:not(.eklenmis)') : [];
+  const boxAcik = box && box.style.display!=='none' && items.length>0;
+  const inp   = document.getElementById(hangi+'Input');
+
+  if(e.key==='ArrowDown'){
     e.preventDefault();
     if(!boxAcik) return;
-    oneriAktifIdx = Math.min(oneriAktifIdx + 1, items.length - 1);
-    items.forEach((el,i) => el.classList.toggle('aktif', i === oneriAktifIdx));
-    // Scroll ile görünür tut
-    if(items[oneriAktifIdx]) items[oneriAktifIdx].scrollIntoView({ block:'nearest' });
-  }
-  else if(e.key === 'ArrowUp'){
+    dualOneriIdx[hangi] = Math.min(dualOneriIdx[hangi]+1, items.length-1);
+    items.forEach((el,i)=>el.classList.toggle('aktif',i===dualOneriIdx[hangi]));
+    if(items[dualOneriIdx[hangi]]) items[dualOneriIdx[hangi]].scrollIntoView({block:'nearest'});
+  } else if(e.key==='ArrowUp'){
     e.preventDefault();
     if(!boxAcik) return;
-    oneriAktifIdx = Math.max(oneriAktifIdx - 1, 0);
-    items.forEach((el,i) => el.classList.toggle('aktif', i === oneriAktifIdx));
-    if(items[oneriAktifIdx]) items[oneriAktifIdx].scrollIntoView({ block:'nearest' });
-  }
-  else if(e.key === 'Enter'){
+    dualOneriIdx[hangi] = Math.max(dualOneriIdx[hangi]-1, 0);
+    items.forEach((el,i)=>el.classList.toggle('aktif',i===dualOneriIdx[hangi]));
+    if(items[dualOneriIdx[hangi]]) items[dualOneriIdx[hangi]].scrollIntoView({block:'nearest'});
+  } else if(e.key==='Enter'){
     e.preventDefault();
-    if(boxAcik && oneriAktifIdx >= 0 && items[oneriAktifIdx]){
-      sehirEkle(items[oneriAktifIdx].dataset.val);
-      oneriAktifIdx = -1;
+    if(boxAcik && dualOneriIdx[hangi]>=0 && items[dualOneriIdx[hangi]]){
+      dualEkle(hangi, items[dualOneriIdx[hangi]].dataset.val);
+    } else if(inp && inp.value.trim()){
+      const match=(window._tumSehirler||[]).find(s=>normTR(s)===normTR(inp.value.trim()));
+      dualEkle(hangi, match||inp.value.trim());
     } else {
-      const val = document.getElementById('sehirInput').value.trim();
-      if(val){
-        // Geçerli bir şehir mi? Listede ara
-        const eslesen = (window._tumSehirler||[]).find(s => normTR(s) === normTR(val));
-        if(eslesen) sehirEkle(eslesen);
-        else if(val.length >= 2) sehirEkle(val); // Listede yoksa yine de ekle, server validate eder
-      } else {
-        araIlanlar(); // Boşsa direkt ara
-      }
-    }
-  }
-  else if(e.key === 'Backspace'){
-    const val = document.getElementById('sehirInput').value;
-    if(val === '' && searchTags.length > 0){
-      searchTags.pop();
-      renderSearchTags();
       araIlanlar();
     }
-  }
-  else if(e.key === 'Escape'){
-    if(box) box.style.display = 'none';
-    oneriAktifIdx = -1;
+  } else if(e.key==='Backspace'){
+    if(inp && inp.value==='' && dualState[hangi].length>0){
+      dualState[hangi].pop();
+      renderDualTags(hangi);
+      araIlanlar();
+    }
+  } else if(e.key==='Escape'){
+    if(box) box.style.display='none';
+    dualOneriIdx[hangi]=-1;
   }
 }
 
-function sehirOneri(){
-  const inp = document.getElementById('sehirInput');
-  const box = document.getElementById('sehirOneriBox');
-  if(!inp || !box) return;
-  const val = inp.value.trim();
-  if(!val || val.length < 1){ box.style.display = 'none'; return; }
-  const nval = normTR(val);
-  const tumSehirler = window._tumSehirler || [];
-  // Önce tam eşleşme/başlangıç, sonra içeren
-  const baslayan = tumSehirler.filter(s => normTR(s).startsWith(nval));
-  const iceren   = tumSehirler.filter(s => !normTR(s).startsWith(nval) && normTR(s).includes(nval));
-  const eslesme  = [...baslayan, ...iceren].slice(0, 10);
-  if(!eslesme.length){ box.style.display = 'none'; return; }
-  oneriAktifIdx = -1;
-  // Zaten eklenmiş olanları işaretle
-  const eklenmisler = new Set(searchTags.map(normTR));
-  box.innerHTML = eslesme.map(s => {
-    const eklenmis = eklenmisler.has(normTR(s));
-    return `<div class="sehirOneriItem${eklenmis?' eklenmis':''}" data-val="${esc(s)}" onmousedown="event.preventDefault();sehirEkle('${esc(s)}')">${esc(formatSehir(s))}${eklenmis?' <span style=\'opacity:.5;font-size:11px\'>(eklendi)</span>':''}</div>`;
-  }).join('');
-  box.style.display = 'block';
-}
-
-// Öneri kutusu dışına tıklayınca kapat
-document.addEventListener('click', e => {
-  if(!e.target.closest('.searchInputWrap') && !e.target.closest('.searchTag')){
-    const box = document.getElementById('sehirOneriBox');
-    if(box) box.style.display = 'none';
-    oneriAktifIdx = -1;
-  }
+// Dışarı tıklayınca kapat
+document.addEventListener('click', e=>{
+  ['nereden','nereye'].forEach(hangi=>{
+    const box = document.getElementById(hangi+'OneriBox');
+    if(box && !e.target.closest('#'+hangi+'Wrap')){
+      box.style.display='none';
+      dualOneriIdx[hangi]=-1;
+    }
+  });
 });
 
-// ── AI Arama (Gemini) ──────────────────────────────────────────
-let _sonAiSorgu = '';
-let _aiModu = false;
-
-async function aiAra() {
-  const inp = document.getElementById('sehirInput');
-  const serbest = inp ? inp.value.trim() : '';
-  // Soru: serbest metin + etiketler birleşimi
-  const soru = [serbest, ...searchTags].filter(Boolean).join(' ');
-
-  if (!soru) {
-    if (inp) {
-      inp.placeholder = 'Ne arıyorsunuz? (örn: istanbul ankara kapalı TIR)';
-      inp.focus();
-    }
-    return;
-  }
-
-  _sonAiSorgu = soru;
-  _aiModu = true;
-
-  const btn = document.getElementById('btnAI');
-  const banner = document.getElementById('aiSonucBanner');
-  btn.disabled = true;
-  btn.classList.add('loading');
-  banner.style.display = 'none';
-  document.getElementById('ilanList').innerHTML =
-    '<div class="loader"><div class="spinner"></div>' +
-    '<p style="margin-top:12px;color:var(--muted);font-size:13px">✨ AI ilanları analiz ediyor...</p></div>';
-
-  try {
-    const aiRes = await api('/api/ai-ara', {
-      method: 'POST',
-      body: JSON.stringify({ soru })
-    });
-
-    if (!aiRes) { araIlanlar(); return; }
-
-    // Hata varsa göster ama normal aramaya da düş
-    if (aiRes.error) {
-      console.warn('AI hata:', aiRes.error);
-      araIlanlar();
-      return;
-    }
-
-    if (!aiRes.ok || !aiRes.sonuc) { araIlanlar(); return; }
-
-    const sonuc = aiRes.sonuc;
-
-    // Banner
-    banner.style.display = 'block';
-    document.getElementById('aiSonucOzet').textContent = sonuc.ozet || '';
-    document.getElementById('aiSonucSayac').textContent =
-      `— ${sonuc.toplamBulunan || sonuc.ilanlar?.length || 0} ilan bulundu`;
-
-    // Render
-    renderAiIlanlar(sonuc.ilanlar || []);
-    loadStats();
-
-  } catch (e) {
-    console.error('AI fetch hata:', e);
-    araIlanlar();
-  } finally {
-    btn.disabled = false;
-    btn.classList.remove('loading');
-  }
-}
-
-function renderAiIlanlar(aiIlanlar) {
-  const list = document.getElementById('ilanList');
-  document.getElementById('ilanCountNum').textContent = aiIlanlar.length;
-
-  if (!aiIlanlar.length) {
-    list.innerHTML = '<div class="emptyState"><div class="emptyIcon">🤖</div>' +
-      '<p>Sorgunuza uygun ilan bulunamadı.</p></div>';
-    return;
-  }
-
-  // Server zaten timestamp'e göre sıraladı, biz sadece render ediyoruz
-  list.innerHTML = aiIlanlar.map((aiIlan, i) => {
-    const metin = aiIlan.orijinalMetin || '';
-    const ts = aiIlan.timestamp || Date.now();
-    const cities = aiIlan.cities || [];
-
-    // Özet satırı — sadece dolu alanları göster
-    const ozetParcalari = [
-      aiIlan.nereden && aiIlan.nereye
-        ? `<span class="ilanAiOzetItem">📍 ${esc(formatSehir(aiIlan.nereden))} → ${esc(formatSehir(aiIlan.nereye))}</span>`
-        : '',
-      aiIlan.aracTipi
-        ? `<span class="ilanAiOzetItem">🚛 ${esc(aiIlan.aracTipi)}</span>`
-        : '',
-      aiIlan.telefon
-        ? `<span class="ilanAiOzetItem">📞 <a href="tel:${aiIlan.telefon.replace(/\D/g,'')}" class="telLink">${esc(aiIlan.telefon)}</a></span>`
-        : ''
-    ].filter(Boolean).join('');
-
-    return `
-    <div class="ilanCard ai-oneri">
-      <div class="ilanMeta">
-        <span class="ilanNum">İlan ${i+1}</span>
-        <span class="aiTag">✨ AI</span>
-        <span class="ilanTime">⏱ ${timeAgo(ts)}</span>
-      </div>
-      ${ozetParcalari ? `<div class="ilanAiOzet">${ozetParcalari}</div>` : ''}
-      <div class="ilanText" style="margin-top:10px">${hlText(metin, searchTags)}</div>
-      ${cities.length ? `<div class="ilanSehirler">${cities.map(c=>`<span class="sehirTag">${esc(formatSehir(c))}</span>`).join('')}</div>` : ''}
-    </div>`;
-  }).join('');
-}
-
-// AI modundayken live arama da AI kullansın
-const _origToggleLive = toggleLive;
-
 function araIlanlar(){
-  const s1 = searchTags[0] || undefined;
-  const s2 = searchTags[1] || undefined;
-  lastSearch = { s1: s1||'', s2: s2||'' };
-  loadIlanlar(s1, s2);
+  // Çoklu seçimde: her nereden × nereye kombinasyonunu ara, birleştir
+  const neredenList = dualState.nereden;
+  const nereyeList  = dualState.nereye;
+  lastSearch = {
+    s1: neredenList[0]||'',
+    s2: nereyeList[0]||''
+  };
+  loadIlanlarCoklu(neredenList, nereyeList);
 }
 
 function resetArama(){
-  searchTags = [];
-  renderSearchTags();
-  lastSearch = { s1:'', s2:'' };
-  const inp = document.getElementById('sehirInput');
-  if(inp){ inp.value = ''; inp.disabled = false; inp.focus(); }
-  const box = document.getElementById('sehirOneriBox');
-  if(box) box.style.display = 'none';
+  dualState.nereden = [];
+  dualState.nereye  = [];
+  renderDualTags('nereden');
+  renderDualTags('nereye');
+  lastSearch = {s1:'',s2:''};
+  ['nereden','nereye'].forEach(h=>{
+    const inp=document.getElementById(h+'Input');
+    const box=document.getElementById(h+'OneriBox');
+    if(inp){inp.value='';inp.style.display='';}
+    if(box) box.style.display='none';
+  });
   loadIlanlar();
 }
 
 function toggleLive(){
-  isLive = !isLive;
-  document.getElementById('liveBtn').classList.toggle('active', isLive);
-  if(isLive) liveInterval = setInterval(() => loadIlanlar(lastSearch.s1||undefined, lastSearch.s2||undefined), 15000);
+  isLive=!isLive;
+  document.getElementById('liveBtn').classList.toggle('active',isLive);
+  if(isLive) liveInterval=setInterval(()=>araIlanlar(),15000);
   else clearInterval(liveInterval);
 }
+
+
 
 window.addEventListener('resize',()=>{
   const hb=document.getElementById('hamburger');
