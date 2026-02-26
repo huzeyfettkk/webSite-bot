@@ -521,7 +521,12 @@ function botOlustur(clientId, isim) {
   client.on('message_create', async (msg) => {
     try {
       const body = msg.body || '';
-      if (!body.trim() || msg.fromMe) return;
+      if (!body.trim()) return;
+      if (msg.fromMe) return;
+      // Durum (status) ve broadcast mesajlarını yoksay
+      if (msg.isStatus) return;
+      if (msg.from === 'status@broadcast') return;
+      if (msg.id?.remote === 'status@broadcast') return;
       const chat = await msg.getChat();
 
       // Özel mesaj: şehir araması
