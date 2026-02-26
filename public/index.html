@@ -142,6 +142,12 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .ilanTime{margin-left:auto;font-size:11px;color:var(--muted);background:var(--bg);padding:3px 9px;border-radius:20px;border:1px solid var(--border);white-space:nowrap;flex-shrink:0}
 .ilanText{font-size:13.5px;line-height:1.75;color:var(--text);white-space:pre-wrap;word-break:break-word}
 .ilanText .hl{background:#dbeafe;color:#1e40af;font-weight:700;padding:0 3px;border-radius:3px}
+/* Satır bazlı render stilleri */
+.ilanTextSatir{white-space:pre-wrap;word-break:break-word}
+.satirEsles{display:block;color:var(--text);font-size:13.5px;line-height:1.75}
+.satirSoluk{display:block;color:var(--muted);font-size:12px;line-height:1.6;opacity:.45}
+.satirTers{display:block;color:var(--muted);font-size:13px;line-height:1.75;opacity:.5;text-decoration:line-through;text-decoration-color:rgba(239,68,68,.4)}
+.tersIkon{font-size:11px;color:#ef4444;margin-left:4px;text-decoration:none;display:inline}
 .ilanSehirler{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
 .sehirTag{font-size:11px;color:var(--accent);background:#eff6ff;padding:2px 8px;border-radius:20px;border:1px solid #bfdbfe}
 .emptyState{text-align:center;padding:50px 20px;color:var(--muted)}
@@ -305,14 +311,23 @@ tr:hover td{background:#f8faff}
   .hamburger{display:flex}
   .sidebar{transform:translateX(-100%)}
   .sidebar.open{transform:translateX(0)}
-  .main{margin-left:0;padding:18px 16px;padding-top:60px}
+  .main{margin-left:0;padding:14px 12px;padding-top:60px}
 
   .statsGrid{grid-template-columns:1fr 1fr;gap:10px}
   .statsGrid .statCard:last-child{grid-column:1/-1}
   .statValue{font-size:24px}
 
-  .searchRow{gap:6px}
-  .searchInput{min-width:0;font-size:16px} /* 16px prevents iOS zoom */
+  /* Arama kutusu mobil */
+  .searchRow{flex-direction:column;align-items:stretch;gap:8px}
+  .searchDual{flex:none;width:100%}
+  .searchDualRow{gap:6px}
+  .searchDualLabel{width:62px;font-size:10px}
+  .dualRealInput{font-size:16px} /* iOS zoom engelle */
+  .searchBtnGroup{display:flex;flex-direction:row;flex-wrap:wrap;gap:6px;width:100%}
+  .searchBtnGroup .btnSearch,
+  .searchBtnGroup .btnAI,
+  .searchBtnGroup .btnReset,
+  .searchBtnGroup .liveBtn{flex:1;min-width:calc(50% - 3px);justify-content:center}
 
   .ilanCard{padding:14px}
   .ilanGrup{max-width:140px}
@@ -324,10 +339,13 @@ tr:hover td{background:#f8faff}
 }
 
 @media(max-width:480px){
-  .searchRow{flex-direction:column;align-items:stretch}
-  .searchInput,.btnSearch,.btnReset,.liveBtn{width:100%;justify-content:center}
   .statsGrid{grid-template-columns:1fr}
   .statsGrid .statCard:last-child{grid-column:auto}
+  .searchDualLabel{display:none} /* çok dar ekranda label gizle */
+  .searchBtnGroup .btnSearch,
+  .searchBtnGroup .btnAI{flex:1}
+  .searchBtnGroup .btnReset,
+  .searchBtnGroup .liveBtn{flex:1}
 }
 </style>
 </head>
@@ -479,14 +497,14 @@ tr:hover td{background:#f8faff}
               </div>
             </div>
           </div>
-          <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;padding-top:2px">
-            <button class="btnSearch" onclick="araIlanlar()" style="width:100%">🔍 Ara</button>
-            <button class="btnAI" id="btnAI" onclick="aiAra()" title="AI ile akıllı arama" style="width:100%">
+          <div class="searchBtnGroup" style="flex-shrink:0;padding-top:2px;display:flex;flex-direction:column;gap:6px">
+            <button class="btnSearch" onclick="araIlanlar()">🔍 Ara</button>
+            <button class="btnAI" id="btnAI" onclick="aiAra()" title="AI ile akıllı arama">
               <span class="aiIcon">✨ AI Ara</span>
               <div class="aiSpinner"></div>
             </button>
-            <button class="btnReset" onclick="resetArama()" style="width:100%">Temizle</button>
-            <button class="liveBtn" id="liveBtn" onclick="toggleLive()" style="width:100%"><div class="liveDot"></div> Canlı</button>
+            <button class="btnReset" onclick="resetArama()">Temizle</button>
+            <button class="liveBtn" id="liveBtn" onclick="toggleLive()"><div class="liveDot"></div> Canlı</button>
           </div>
         </div>
       </div>
@@ -822,20 +840,101 @@ async function loadIlanlarCoklu(neredenList, nereyeList){
   }
 }
 
-function renderIlanlar(ilanlar,matchedTerms=[]){
-  document.getElementById('ilanCountNum').textContent=ilanlar.length;
+function renderIlanlar(ilanlar, matchedTerms=[]){
+  document.getElementById('ilanCountNum').textContent = ilanlar.length;
   if(!ilanlar.length){
-    document.getElementById('ilanList').innerHTML='<div class="emptyState"><div class="emptyIcon">📭</div><p>Aradığınız kriterlere uygun ilan bulunamadı.</p></div>';return;
+    document.getElementById('ilanList').innerHTML = '<div class="emptyState"><div class="emptyIcon">📭</div><p>Aradığınız kriterlere uygun ilan bulunamadı.</p></div>';
+    return;
   }
-  document.getElementById('ilanList').innerHTML=ilanlar.map((ilan,i)=>`
+
+  const s1 = dualState.nereden[0] || null;
+  const s2 = dualState.nereye[0]  || null;
+
+  document.getElementById('ilanList').innerHTML = ilanlar.map((ilan, i) => {
+    const text = ilan.text || '';
+
+    // Arama varsa satır bazlı akıllı render
+    let ilanHTML = '';
+    if(s1 || s2){
+      ilanHTML = renderSatirlar(text, matchedTerms, s1, s2);
+    } else {
+      ilanHTML = `<div class="ilanText">${hlText(text, matchedTerms)}</div>`;
+    }
+
+    // Sadece eşleşen şehir etiketlerini göster
+    const etiketSehirler = (ilan.cities || []).filter(c => {
+      if(!s1 && !s2) return true; // arama yoksa hepsini göster
+      const nc = normTR(c);
+      return matchedTerms.some(t => normTR(t) === nc);
+    });
+
+    return `
     <div class="ilanCard">
       <div class="ilanMeta">
         <span class="ilanNum">İlan ${i+1}</span>
         <span class="ilanTime">⏱ ${timeAgo(ilan.timestamp)}</span>
       </div>
-      <div class="ilanText">${hlText(ilan.text,matchedTerms)}</div>
-      ${(ilan.cities||[]).length?`<div class="ilanSehirler">${ilan.cities.map(c=>`<span class="sehirTag">${esc(formatSehir(c))}</span>`).join('')}</div>`:''}
-    </div>`).join('');
+      ${ilanHTML}
+      ${etiketSehirler.length ? `<div class="ilanSehirler">${etiketSehirler.map(c=>`<span class="sehirTag">${esc(formatSehir(c))}</span>`).join('')}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// Satır bazlı akıllı render:
+// - Eşleşen satırları tam göster + highlight
+// - Eşleşmeyen satırları soluklaştır
+// - Ters yön eşleşmesini (s2→s1) soluk göster
+function renderSatirlar(text, matchedTerms, s1, s2){
+  const norm = s => String(s||'')
+    .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
+    .replace(/Ğ/g,'g').replace(/ğ/g,'g')
+    .replace(/Ü/g,'u').replace(/ü/g,'u')
+    .replace(/Ş/g,'s').replace(/ş/g,'s')
+    .replace(/Ö/g,'o').replace(/ö/g,'o')
+    .replace(/Ç/g,'c').replace(/ç/g,'c')
+    .toLowerCase().replace(/[^a-z0-9]/g,' ').replace(/\s+/g,' ').trim();
+
+  const n1 = s1 ? norm(s1) : null;
+  const n2 = s2 ? norm(s2) : null;
+
+  // Arama terimlerinin normalize halleri
+  const normTerms = matchedTerms.map(t => norm(t)).filter(Boolean);
+
+  const satirlar = text.split(/\n/);
+
+  const parcalar = satirlar.map(satir => {
+    const ns = norm(satir);
+
+    // Satırda hiç eşleşen terim yok — soluklaştır
+    const satirdeEslesme = normTerms.some(t => ns.includes(t));
+    if(!satirdeEslesme){
+      return `<span class="satirSoluk">${esc(satir)}</span>`;
+    }
+
+    // İki şehir araması varsa yön kontrolü
+    if(n1 && n2){
+      const p1 = ns.indexOf(n1);
+      const p2 = ns.indexOf(n2);
+      const dogruYon  = p1 !== -1 && p2 !== -1 && p1 < p2;  // s1 → s2 ✅
+      const tersYon   = p1 !== -1 && p2 !== -1 && p2 < p1;  // s2 → s1 ❌
+
+      if(dogruYon){
+        // Doğru yön — tam highlight
+        return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
+      } else if(tersYon){
+        // Ters yön — soluk + uyarı
+        return `<span class="satirTers" title="Ters yön">${hlText(satir, matchedTerms)} <span class="tersIkon">↩</span></span>`;
+      } else {
+        // Sadece bir şehir geçiyor — normal highlight
+        return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
+      }
+    }
+
+    // Tek şehir araması — eşleşen satır
+    return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
+  });
+
+  return `<div class="ilanText ilanTextSatir">${parcalar.join('\n')}</div>`;
 }
 
 function hlText(text, terms){

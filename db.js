@@ -116,7 +116,7 @@ function ilanEkle({ hash, text, cities, chatName, chatId, senderPhone, timestamp
 /**
  * İlan ara — parametrik sorgular, injection-safe
  */
-function ilanAra(sehir1, sehir2) {
+function ilanAra(sehir1, sehir2, ilceler1, ilceler2) {
   const since = Date.now() - 24 * 60 * 60 * 1000;
 
   if (!sehir1) {
@@ -134,22 +134,42 @@ function ilanAra(sehir1, sehir2) {
     .replace(/[^a-z0-9 ]/g, ' ')
     .replace(/\s+/g, ' ').trim();
 
-  const n1 = normStr(sehir1);
-  const like1 = `%"${sehir1.toLowerCase()}"%`;
-  let rows = _stmtIlanSehir1.all(since, like1);
+  // il + tüm ilçeler listesi (verilmemişse sadece şehir adı)
+  const list1 = ilceler1 && ilceler1.length ? ilceler1 : [sehir1];
+  const list2 = ilceler2 && ilceler2.length ? ilceler2 : (sehir2 ? [sehir2] : []);
 
-  if (sehir2) {
-    const n2 = normStr(sehir2);
+  // SQL: cities JSON'ında list1'deki herhangi bir şehir geçiyor mu?
+  const placeholders1 = list1.map(() => '?').join(' OR cities LIKE ');
+  const sql = `SELECT * FROM ilanlar WHERE timestamp > ? AND (cities LIKE ${placeholders1})`;
+  const params = [since, ...list1.map(s => `%"${s.toLowerCase()}"%`)];
+  let rows = db.prepare(sql).all(...params);
+
+  if (sehir2 && list2.length) {
+    const nList1 = list1.map(s => normStr(s)).filter(Boolean);
+    const nList2 = list2.map(s => normStr(s)).filter(Boolean);
+
     rows = rows.filter(r => {
-      // Satır bazlı eşleştirme — her satırda c1'den sonra c2 var mı?
+      // Satır bazlı: aynı satırda list1'den biri solda, list2'den biri sağda mı?
       const satirlar = r.text.split(/[\n\r]+/).map(s => normStr(s));
       for (const satir of satirlar) {
-        const pos1 = satir.indexOf(n1);
-        const pos2 = satir.indexOf(n2);
-        if (pos1 !== -1 && pos2 !== -1 && pos1 < pos2) return true;
+        // list1'den ilk eşleşen pozisyonu bul (en küçük)
+        let p1 = Infinity;
+        for (const n of nList1) {
+          const idx = satir.indexOf(n);
+          if (idx !== -1 && idx < p1) p1 = idx;
+        }
+        if (p1 === Infinity) continue;
+
+        // list2'den herhangi biri p1'den sonra mı?
+        for (const n of nList2) {
+          const p2 = satir.indexOf(n);
+          if (p2 !== -1 && p2 > p1) return true;
+        }
       }
       return false;
     });
+  } else if (!sehir2) {
+    // Tek şehir araması: sadece cities'de var mı yeterli (SQL zaten filtredi)
   }
 
   return rows;

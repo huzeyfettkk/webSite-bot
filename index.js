@@ -343,50 +343,65 @@ class IlanStore {
   }
 
   // Ham sonuç döndür (server.js'de DB ile birleştirmek için)
-  searchRaw(city1, city2) {
-    return this.search(city1, city2);
+  searchRaw(city1, city2, ilceler1, ilceler2) {
+    return this.search(city1, city2, ilceler1, ilceler2);
   }
 
-  search(city1, city2) {
-    const c1 = normalize(city1);
-    const c2 = city2 ? normalize(city2) : null;
+  search(city1, city2, ilceler1, ilceler2) {
+    const norm = s => String(s||'')
+      .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
+      .replace(/Ğ/g,'g').replace(/ğ/g,'g')
+      .replace(/Ü/g,'u').replace(/ü/g,'u')
+      .replace(/Ş/g,'s').replace(/ş/g,'s')
+      .replace(/Ö/g,'o').replace(/ö/g,'o')
+      .replace(/Ç/g,'c').replace(/ç/g,'c')
+      .toLowerCase().replace(/[^a-z0-9]/g,' ').replace(/\s+/g,' ').trim();
+
+    // il + ilçe listesi (verilmemişse sadece şehir adı)
+    const list1 = (ilceler1 && ilceler1.length) ? ilceler1.map(norm) : [norm(city1)];
+    const list2 = (ilceler2 && ilceler2.length) ? ilceler2.map(norm) : (city2 ? [norm(city2)] : []);
+
     const results = [];
 
     for (const [, ilan] of this._store) {
       let matched = false;
 
-      if (!c2) {
-        // Tek şehir: cities listesinde var mı?
-        matched = (ilan.cities || []).some(c => normalize(c) === c1);
+      if (!city2) {
+        // Tek şehir: cities listesinde veya metinde list1'den biri var mı?
+        matched = (ilan.cities || []).some(c => list1.includes(norm(c)));
         if (!matched) {
-          const t = ' ' + normalize(ilan.text) + ' ';
-          matched = t.includes(' ' + c1 + ' ');
+          const t = ' ' + norm(ilan.text) + ' ';
+          matched = list1.some(n => t.includes(' ' + n + ' '));
         }
       } else {
-        // İki şehir: AYNI SATIRDA c1'den sonra c2 geliyor mu?
-        // Önce linePairs kontrolü (en güvenilir)
+        // İki şehir: AYNI SATIRDA list1'den biri solda, list2'den biri sağda mı?
+        // linePairs ile kontrol (en güvenilir, yeni ilanlar)
         if (ilan.linePairs && ilan.linePairs.length > 0) {
           for (const pair of ilan.linePairs) {
-            const normPair = pair.map(c => normalize(c));
-            const i1 = normPair.indexOf(c1);
-            const i2 = normPair.indexOf(c2);
-            if (i1 !== -1 && i2 !== -1 && i1 < i2) {
-              matched = true;
-              break;
-            }
+            const normPair = pair.map(norm);
+            const p1 = normPair.findIndex(c => list1.includes(c));
+            const p2 = normPair.findIndex(c => list2.includes(c));
+            if (p1 !== -1 && p2 !== -1 && p1 < p2) { matched = true; break; }
           }
         }
 
-        // linePairs yoksa (eski ilanlar) satır bazlı metin araması yap
+        // linePairs yoksa metin bazlı satır kontrolü
         if (!matched) {
-          const lines = ilan.text.split(/[\n\r]+/).map(l => normalize(l));
+          const lines = ilan.text.split(/[\n\r]+/).map(l => norm(l));
           for (const line of lines) {
-            const pos1 = line.indexOf(c1);
-            const pos2 = line.indexOf(c2);
-            if (pos1 !== -1 && pos2 !== -1 && pos1 < pos2) {
-              matched = true;
-              break;
+            // list1'den en erken pozisyon
+            let earliest1 = Infinity;
+            for (const n of list1) {
+              const idx = line.indexOf(n);
+              if (idx !== -1 && idx < earliest1) earliest1 = idx;
             }
+            if (earliest1 === Infinity) continue;
+            // list2'den herhangi biri daha sonra mı?
+            for (const n of list2) {
+              const idx = line.indexOf(n);
+              if (idx !== -1 && idx > earliest1) { matched = true; break; }
+            }
+            if (matched) break;
           }
         }
       }

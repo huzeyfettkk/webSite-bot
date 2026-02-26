@@ -402,22 +402,20 @@ app.get('/api/ilanlar', authMiddleware, (req, res) => {
     logEkle({ userId: req.user.id, action: 'search', detail: bulunan2 ? `${bulunan1} → ${bulunan2}` : bulunan1, ipAddress: getIP(req) });
 
     // matchedTerms: il + tüm ilçeleri highlight için
-    matchedTerms = [
-      ...getIlVeIlceleri(bulunan1),
-      ...(bulunan2 ? getIlVeIlceleri(bulunan2) : [])
-    ];
+    const ilceler1 = getIlVeIlceleri(bulunan1);
+    const ilceler2 = bulunan2 ? getIlVeIlceleri(bulunan2) : [];
+    matchedTerms = [...ilceler1, ...ilceler2];
 
-    // ── SORUN 8 ÇÖZÜMÜ: RAM store + SQLite birleştir ──────────────
-    // SQLite'tan sonuçları al (24 saatlik)
-    const dbRows = ilanAra(bulunan1, bulunan2 || null);
+    // SQLite'tan sonuçları al — il + ilçe listesiyle genişletilmiş arama
+    const dbRows = ilanAra(bulunan1, bulunan2 || null, ilceler1, ilceler2);
     const dbIlanlar = dbRows.map(r => ({
       ...r,
       cities: (() => { try { return JSON.parse(r.cities); } catch { return []; } })(),
       _kaynak: 'db'
     }));
 
-    // RAM store'dan sonuçları al (anlık, son 1 saat)
-    const ramIlanlar = _store ? _store.searchRaw(bulunan1, bulunan2 || null).map(i => ({
+    // RAM store'dan sonuçları al — ilçe listesi de gönder
+    const ramIlanlar = _store ? _store.searchRaw(bulunan1, bulunan2 || null, ilceler1, ilceler2).map(i => ({
       ...i,
       _kaynak: 'ram'
     })) : [];
