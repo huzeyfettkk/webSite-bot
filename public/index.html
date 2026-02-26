@@ -1543,14 +1543,41 @@ async function botEkleKaydet(){
 }
 
 function qrGoster(clientId, isim){
-  document.getElementById('qrModalBaslik').textContent = '📱 ' + isim;
-  document.getElementById('qrModalAlt').textContent = 'WhatsApp → Bağlı Cihazlar → Cihaz Ekle → QR\'ı tarat';
+  document.getElementById('qrModalBaslik').textContent = '🤖 ' + isim;
+  document.getElementById('qrModalAlt').textContent = 'Bot başlatılıyor, QR bekleniyor...';
   document.getElementById('qrModalIcerik').innerHTML = '<div class="spinner"></div>';
-  document.getElementById('qrModalDurum').textContent = 'QR bekleniyor...';
+  document.getElementById('qrModalDurum').textContent = '';
   document.getElementById('qrModal').style.display = 'flex';
 
   // Eski SSE kapat
   if(_qrEventSource){ _qrEventSource.close(); _qrEventSource = null; }
+
+  // QR PNG'yi retry ile yükle
+  async function qrImgYukle(deneme){
+    const imgUrl = '/api/bots/' + encodeURIComponent(clientId) + '/qr-image?token=' + encodeURIComponent(token) + '&t=' + Date.now();
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        img.style.cssText = 'width:256px;height:256px;border-radius:10px;display:block;margin:auto';
+        document.getElementById('qrModalIcerik').innerHTML = '';
+        document.getElementById('qrModalIcerik').appendChild(img);
+        document.getElementById('qrModalAlt').textContent = 'WhatsApp → Bağlı Cihazlar → Cihaz Ekle → QR\'ı tarat';
+        document.getElementById('qrModalDurum').textContent = '';
+        resolve(true);
+      };
+      img.onerror = () => {
+        if(deneme < 4){
+          // 1.5s sonra tekrar dene
+          document.getElementById('qrModalDurum').textContent = 'QR yükleniyor... (' + deneme + '/4)';
+          setTimeout(() => qrImgYukle(deneme + 1).then(resolve), 1500);
+        } else {
+          document.getElementById('qrModalIcerik').innerHTML = '<div style="color:#ef4444;font-size:14px;text-align:center;padding:20px">⚠️ QR görüntüsü yüklenemedi.<br><br><button class="btn" onclick="qrImgYukle(1)" style="font-size:13px">🔄 Tekrar Dene</button></div>';
+          resolve(false);
+        }
+      };
+      img.src = imgUrl;
+    });
+  }
 
   // SSE bağlantısı aç
   _qrEventSource = new EventSource('/api/bots/' + encodeURIComponent(clientId) + '/qr?token=' + encodeURIComponent(token));
@@ -1559,28 +1586,30 @@ function qrGoster(clientId, isim){
     try {
       const msg = JSON.parse(e.data);
       if(msg.tip === 'qr_hazir'){
-        // PNG endpoint'inden çek — timestamp ile cache'i atla
-        const imgUrl = '/api/bots/' + encodeURIComponent(clientId) + '/qr-image?token=' + encodeURIComponent(token) + '&t=' + Date.now();
-        document.getElementById('qrModalIcerik').innerHTML =
-          `<img src="${imgUrl}" style="width:256px;height:256px;border-radius:10px;display:block" alt="QR Kod" onerror="this.parentNode.innerHTML='<div style=color:#ef4444>QR yüklenemedi</div>'">`;
-        document.getElementById('qrModalDurum').textContent = '📱 WhatsApp → Bağlı Cihazlar → Cihaz Ekle → QR\'ı tarat';
+        document.getElementById('qrModalAlt').textContent = 'QR hazırlanıyor...';
+        document.getElementById('qrModalIcerik').innerHTML = '<div class="spinner"></div>';
+        await qrImgYukle(1);
       } else if(msg.tip === 'dogrulandi'){
-        document.getElementById('qrModalIcerik').innerHTML = '<div style="font-size:56px">✅</div>';
-        document.getElementById('qrModalDurum').textContent = 'Doğrulandı! Bağlanıyor...';
+        document.getElementById('qrModalIcerik').innerHTML = '<div style="font-size:64px;text-align:center">✅</div>';
+        document.getElementById('qrModalAlt').textContent = 'Doğrulandı!';
+        document.getElementById('qrModalDurum').textContent = 'Bağlantı kuruluyor...';
       } else if(msg.tip === 'hazir'){
-        document.getElementById('qrModalIcerik').innerHTML = '<div style="font-size:56px">🟢</div>';
-        document.getElementById('qrModalDurum').textContent = '✅ Bot başarıyla bağlandı!';
-        _qrEventSource.close(); _qrEventSource = null;
+        document.getElementById('qrModalIcerik').innerHTML = '<div style="font-size:64px;text-align:center">🟢</div>';
+        document.getElementById('qrModalAlt').textContent = 'Bot hazır!';
+        document.getElementById('qrModalDurum').textContent = '✅ WhatsApp\'a başarıyla bağlandı';
+        if(_qrEventSource){ _qrEventSource.close(); _qrEventSource = null; }
         setTimeout(() => { qrModalKapat(); loadBotlar(); }, 2500);
       } else if(msg.tip === 'baglanti_kesildi'){
-        document.getElementById('qrModalIcerik').innerHTML = '<div style="font-size:56px">🔴</div>';
-        document.getElementById('qrModalDurum').textContent = 'Bağlantı kesildi';
+        document.getElementById('qrModalIcerik').innerHTML = '<div style="font-size:64px;text-align:center">🔴</div>';
+        document.getElementById('qrModalAlt').textContent = 'Bağlantı kesildi';
+        document.getElementById('qrModalDurum').textContent = 'Bot yeniden başlatılıyor...';
       }
     } catch {}
   };
 
   _qrEventSource.onerror = () => {
-    document.getElementById('qrModalDurum').textContent = '⚠️ Bağlantı hatası — sayfayı yenileyin';
+    // SSE hata — polling ile kontrol et
+    document.getElementById('qrModalDurum').textContent = '⚠️ Sunucu bağlantısı kesildi, yeniden deneniyor...';
   };
 }
 

@@ -579,14 +579,22 @@ app.post('/api/bots/:clientId/restart', authMiddleware, adminMiddleware, async (
 app.get('/api/bots/:clientId/qr-image', authMiddleware, adminMiddleware, async (req, res) => {
   const { clientId } = req.params;
   const live = _botManager?.get(clientId);
-  if (!live?.qrData) return res.status(404).json({ error: 'QR yok' });
+  if (!live?.qrData) {
+    console.log(`[qr-image] ${clientId} — qrData yok, durum: ${live?.durum}`);
+    return res.status(404).json({ error: 'QR henüz hazır değil', durum: live?.durum || 'bilinmiyor' });
+  }
   try {
     const QRCode = require('qrcode');
-    const png = await QRCode.toBuffer(live.qrData, { width: 280, margin: 2, color: { dark: '#1e293b', light: '#ffffff' } });
+    const png = await QRCode.toBuffer(live.qrData, {
+      width: 280, margin: 2,
+      color: { dark: '#1e293b', light: '#ffffff' }
+    });
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'no-store');
     res.send(png);
+    console.log(`[qr-image] ${clientId} — PNG gönderildi (${png.length} byte)`);
   } catch (e) {
+    console.error(`[qr-image] ${clientId} — Hata:`, e.message);
     res.status(500).json({ error: e.message });
   }
 });
