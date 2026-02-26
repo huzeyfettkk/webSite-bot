@@ -55,6 +55,15 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_logs_userId    ON logs(userId);
   CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
+
+  CREATE TABLE IF NOT EXISTS bots (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    isim      TEXT    NOT NULL DEFAULT 'Bot',
+    clientId  TEXT    NOT NULL UNIQUE,
+    durum     TEXT    NOT NULL DEFAULT 'bekliyor',
+    telefon   TEXT    NOT NULL DEFAULT '',
+    createdAt TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 // ── Admin yoksa oluştur ─────────────────────────
@@ -288,6 +297,34 @@ function loglariGetir(limit = 200) {
 }
 
 // ══════════════════════════════════════════════
+// BOT FONKSİYONLARI
+// ══════════════════════════════════════════════
+
+function botEkle({ isim, clientId }) {
+  const var_ = db.prepare('SELECT id FROM bots WHERE clientId = ?').get(clientId);
+  if (var_) return var_.id;
+  const r = db.prepare('INSERT INTO bots (isim, clientId, durum) VALUES (?, ?, ?)').run(isim, clientId, 'bekliyor');
+  return r.lastInsertRowid;
+}
+
+function botGuncelle(clientId, updates) {
+  const fields = Object.keys(updates).map(k => `${k} = @${k}`).join(', ');
+  db.prepare(`UPDATE bots SET ${fields} WHERE clientId = @clientId`).run({ ...updates, clientId });
+}
+
+function botSil(clientId) {
+  db.prepare('DELETE FROM bots WHERE clientId = ?').run(clientId);
+}
+
+function tumBotlar() {
+  return db.prepare('SELECT * FROM bots ORDER BY createdAt ASC').all();
+}
+
+function botBul(clientId) {
+  return db.prepare('SELECT * FROM bots WHERE clientId = ?').get(clientId);
+}
+
+// ══════════════════════════════════════════════
 
 module.exports = {
   db,
@@ -299,4 +336,6 @@ module.exports = {
   tumKullanicilar, kullaniciSil,
   // Log
   logEkle, loglariGetir,
+  // Bot
+  botEkle, botGuncelle, botSil, tumBotlar, botBul,
 };

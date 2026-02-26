@@ -424,210 +424,244 @@ class IlanStore {
   size() { return this._store.size; }
 }
 
-// ── Ana Bot ────────────────────────────────────
-const store  = new IlanStore();
-const client = new Client({
-  authStrategy: new LocalAuth({ clientId: 'lojistik-bot' }),
-  qrMaxRetries: 0, // QR süresiz beklesin, otomatik yenilenmesin
-  puppeteer: {
+// ── Multi-Bot Manager ─────────────────────────
+// (Client, LocalAuth zaten yukarıda require edildi)
+const { botEkle, botGuncelle, botSil, tumBotlar } = require('./db');
+const path = require('path');
+const fs   = require('fs');
+
+const store = new IlanStore();
+
+// Aktif client'lar: clientId → { client, durum, qrData, qrWaiters }
+const botManager = new Map();
+
+// QR bekliyenler: clientId → [res, res, ...]  (SSE response'ları)
+const qrWaiters = new Map();
+
+function puppeteerOpts() {
+  return {
     headless: true,
     args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--disable-gpu',
-      ...(process.platform === 'linux' ? ['--disable-dev-shm-usage', '--no-zygote', '--single-process'] : []),
+      '--no-sandbox', '--disable-setuid-sandbox',
+      '--disable-accelerated-2d-canvas', '--no-first-run', '--disable-gpu',
+      ...(process.platform === 'linux'
+        ? ['--disable-dev-shm-usage', '--no-zygote', '--single-process'] : []),
     ],
     protocolTimeout: 120000,
     timeout: 120000,
-  },
-});
+  };
+}
 
-client.on('qr', qr => {
-  console.log('\n📱 QR kodu telefonunuzla taratın:\n');
-  qrcode.generate(qr, { small: true });
-});
+function temizleLock(clientId) {
+  const dir = path.join(__dirname, '.wwebjs_auth', 'session-' + clientId);
+  ['SingletonLock','SingletonCookie','SingletonSocket'].forEach(f => {
+    try { const p = path.join(dir, f); if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
+  });
+}
 
-client.on('authenticated', () => console.log('✅ Kimlik doğrulandı.'));
+// QR event'i dinleyenlere gönder (frontend /qr-image çeker)
+function qrGonder(clientId) {
+  const waiters = qrWaiters.get(clientId) || [];
+  waiters.forEach(res => {
+    try { res.write(`data: ${JSON.stringify({ tip: 'qr_hazir' })}\n\n`); } catch {}
+  });
+}
 
-client.on('ready', () => {
-  console.log('🤖 Bot hazır! Yeni ilanlar otomatik yakalanacak.');
-});
+// Durum event'i dinleyenlere gönder
+function durumGonder(clientId, tip, extra = {}) {
+  const waiters = qrWaiters.get(clientId) || [];
+  waiters.forEach(res => {
+    try { res.write(`data: ${JSON.stringify({ tip, ...extra })}\n\n`); } catch {}
+  });
+}
 
+function botOlustur(clientId, isim) {
+  if (botManager.has(clientId)) return botManager.get(clientId);
 
-client.on('message_create', async (msg) => {
-  try {
-    const body = msg.body || '';
-    if (!body.trim()) return;
+  temizleLock(clientId);
 
-    // Kendi gönderdiğimiz mesajlara HİÇBİR ZAMAN cevap verme (grup veya özel)
-    if (msg.fromMe) return;
+  const client = new Client({
+    authStrategy: new LocalAuth({ clientId }),
+    qrMaxRetries: 3,
+    puppeteer: puppeteerOpts(),
+  });
 
-    const chat = await msg.getChat();
+  const bot = { client, clientId, isim, durum: 'baslatiliyor', qrData: null };
+  botManager.set(clientId, bot);
 
-    // ── Özel sohbet: sadece şehir araması ──
-    if (!chat.isGroup) {
-      const raw = body.trim();
+  client.on('qr', qr => {
+    bot.durum  = 'qr_bekleniyor';
+    bot.qrData = qr;
+    botGuncelle(clientId, { durum: 'qr_bekleniyor' });
+    console.log(`📱 [${clientId}] QR hazır`);
+    // SSE'ye qr_ready eventi gönder (frontend /qr-image endpoint'inden çeker)
+    qrGonder(clientId, 'yeni');
+  });
 
-      // Şehir çıkarıcı — sadece şehir isimleri içeriyorsa cevap ver
-      function sehirCikar(metin) {
-        const temiz = normalize(metin)
-          .replace(/\bdan\b/g, ' ').replace(/\bden\b/g, ' ')
-          .replace(/\bdan$/g, ' ').replace(/\bden$/g, ' ')
-          .replace(/\ba\b/g, ' ').replace(/\be\b/g, ' ')
-          .replace(/[-_>→|\/\\,;]/g, ' ')
-          .replace(/\s+/g, ' ').trim();
+  client.on('authenticated', () => {
+    bot.durum  = 'dogrulandi';
+    bot.qrData = null;
+    botGuncelle(clientId, { durum: 'dogrulandi' });
+    durumGonder(clientId, 'dogrulandi');
+    console.log(`✅ [${clientId}] Doğrulandı`);
+  });
 
-        const kelimeler = temiz.split(' ').filter(Boolean);
+  client.on('ready', async () => {
+    bot.durum = 'hazir';
+    try {
+      const info = client.info;
+      const tel  = info?.wid?.user || '';
+      botGuncelle(clientId, { durum: 'hazir', telefon: tel });
+      bot.telefon = tel;
+      durumGonder(clientId, 'hazir', { telefon: tel });
+    } catch { botGuncelle(clientId, { durum: 'hazir' }); }
+    console.log(`🤖 [${clientId}] Hazır!`);
+  });
 
-        // Mesaj çok uzunsa veya şehir dışı kelimeler çok fazlaysa arama değil — cevap verme
-        // Sadece 1-4 kelimeli kısa mesajlara cevap ver
-        if (kelimeler.length > 5) return [];
+  client.on('message_create', async (msg) => {
+    try {
+      const body = msg.body || '';
+      if (!body.trim() || msg.fromMe) return;
+      const chat = await msg.getChat();
 
-        const bulunanlar = [];
-        const kullanildi = new Set();
-
-        // 2 kelimeli şehirler (kahramanmaraş)
-        for (let i = 0; i < kelimeler.length - 1; i++) {
-          if (kullanildi.has(i) || kullanildi.has(i+1)) continue;
-          const ikili = kelimeler[i] + ' ' + kelimeler[i+1];
-          const eslesen = CONFIG.CITIES.find(c => normalize(c) === ikili);
-          if (eslesen) {
-            bulunanlar.push({ sehir: eslesen, pos: i });
-            kullanildi.add(i); kullanildi.add(i+1);
-          }
+      // Özel mesaj: şehir araması
+      if (!chat.isGroup) {
+        const sehirler = sehirCikarBot(body.trim());
+        if (!sehirler.length) return;
+        const [city1, city2] = sehirler;
+        const results = store.search(city1, city2 || null);
+        const baslik = city2 ? `🔍 *${city1.toUpperCase()} → ${city2.toUpperCase()}*`
+                              : `🔍 *${city1.toUpperCase()}*`;
+        if (!results.length) {
+          await msg.reply(baslik + '\n❌ Uygun ilan bulunamadı.\n_(Son 1 saat içindeki ilanlar gösterilir)_');
+        } else {
+          await msg.reply(baslik + '\n📦 ' + results.length + ' ilan\n' + '─'.repeat(28) + '\n\n' + formatResults(results, sehirler));
         }
-
-        // Tek kelimeli şehirler
-        for (let i = 0; i < kelimeler.length; i++) {
-          if (kullanildi.has(i)) continue;
-          const eslesen = CONFIG.CITIES.find(c => normalize(c) === kelimeler[i]);
-          if (eslesen) {
-            bulunanlar.push({ sehir: eslesen, pos: i });
-            kullanildi.add(i);
-          }
-        }
-
-        // Şehir dışı kelime varsa ve şehir sayısı az ise — belirsiz mesaj, cevap verme
-        const sehirDisiKelime = kelimeler.filter((_, i) => !kullanildi.has(i));
-        const sehirDisiAnlamli = sehirDisiKelime.filter(k => k.length > 2);
-        if (sehirDisiAnlamli.length > 1) return []; // Şehir dışı çok kelime var — normal sohbet
-
-        bulunanlar.sort((a, b) => a.pos - b.pos);
-        return bulunanlar.map(b => b.sehir);
+        return;
       }
 
-      const sehirler = sehirCikar(raw);
-
-      // Hiç şehir bulunamadıysa CEVAP VERME — normal sohbet mesajı olabilir
-      if (sehirler.length === 0) return;
-
-      const city1 = sehirler[0];
-      const city2 = sehirler[1] || null;
-      const results = store.search(city1, city2);
-
-      const baslik = city2
-        ? `🔍 *${city1.toUpperCase()} → ${city2.toUpperCase()}*`
-        : `🔍 *${city1.toUpperCase()}*`;
-      const sonucSayisi = `📦 ${results.length} ilan\n${'─'.repeat(28)}\n\n`;
-
-      if (results.length === 0) {
-        await msg.reply(baslik + '\n❌ Uygun ilan bulunamadı.\n_(Son 1 saat içindeki ilanlar gösterilir)_');
-      } else {
-        await msg.reply(baslik + '\n' + sonucSayisi + formatResults(results, sehirler));
+      // Grup: ilan kaydet
+      if (isIlan(body)) {
+        const cities    = extractCities(body);
+        const linePairs = extractLinePairs(body);
+        const timestamp = msg.timestamp * 1000;
+        const hash      = contentHash(body);
+        store.add(msg.from + '_' + msg.id.id, { text: body, cities, linePairs, chatName: chat.name || 'Grup', chatId: chat.id._serialized, senderName: msg.author || msg.from, timestamp });
+        ilanEkle({ hash: String(hash), text: body, cities, chatName: chat.name || 'Grup', chatId: chat.id._serialized, senderPhone: '', timestamp });
+        console.log(`💾 [${clientId}] ${chat.name} | ${cities.join(', ')}`);
+        if (isSamsunIlani(body)) samsunBildirimiGonder(client, { text: body, chatName: chat.name || 'Grup', timestamp });
       }
-      console.log(`🔍 "${city1}${city2?' → '+city2:''}" | ${results.length} sonuç`);
-      return;
-    }
+    } catch (e) { console.error(`❌ [${clientId}]`, e.message); }
+  });
 
-    // ── Grup: ilan kaydet ──
-    if (isIlan(body)) {
-      const cities    = extractCities(body);
-      const linePairs = extractLinePairs(body); // satır bazlı güzergah çiftleri
-      const timestamp = msg.timestamp * 1000;
-      const hash      = contentHash(body);
+  client.on('disconnected', async reason => {
+    bot.durum  = 'baglanti_kesildi';
+    bot.qrData = null;
+    botGuncelle(clientId, { durum: 'baglanti_kesildi' });
+    durumGonder(clientId, 'baglanti_kesildi');
+    console.warn(`⚠️  [${clientId}] Bağlantı kesildi: ${reason}`);
+    temizleLock(clientId);
+    setTimeout(async () => {
+      if (!botManager.has(clientId)) return;
+      console.log(`🔄 [${clientId}] Yeniden bağlanılıyor...`);
+      try { await client.initialize(); } catch (e) { console.error(`❌ [${clientId}]`, e.message); }
+    }, 15_000);
+  });
 
-      // RAM store (anlık arama için)
-      store.add(`${msg.from}_${msg.id.id}`, {
-        text: body, cities, linePairs,
-        chatName:   chat.name || 'Grup',
-        chatId:     chat.id._serialized,
-        senderName: msg.author || msg.from,
-        timestamp,
-      });
+  client.initialize().catch(e => {
+    console.error(`❌ [${clientId}] initialize hatası:`, e.message);
+    bot.durum = 'hata';
+    botGuncelle(clientId, { durum: 'hata' });
+  });
 
-      // SQLite (kalıcı, 24 saatlik geçmiş)
-      ilanEkle({
-        hash:        String(hash),
-        text:        body,
-        cities,
-        chatName:    chat.name || 'Grup',
-        chatId:      chat.id._serialized,
-        senderPhone: '',
-        timestamp,
-      });
+  return bot;
+}
 
-      console.log(`💾 ${chat.name} | ${cities.join(', ')} | toplam: ${store.size()}`);
-      if (isSamsunIlani(body)) {
-        samsunBildirimiGonder({ text: body, chatName: chat.name || 'Grup', timestamp });
-      }
-    }
-  } catch (e) {
-    console.error('❌', e.message);
+async function botDurdur(clientId) {
+  const bot = botManager.get(clientId);
+  if (!bot) return;
+  try { await bot.client.destroy(); } catch {}
+  temizleLock(clientId);
+  botManager.delete(clientId);
+}
+
+// Şehir çıkarıcı (bot özel mesajlar için)
+function sehirCikarBot(metin) {
+  const temiz = normalize(metin)
+    .replace(/\bdan\b/g,' ').replace(/\bden\b/g,' ')
+    .replace(/\bdan$/g,' ').replace(/\bden$/g,' ')
+    .replace(/\ba\b/g,' ').replace(/\be\b/g,' ')
+    .replace(/[-_>→|/\\,;]/g,' ').replace(/\s+/g,' ').trim();
+  const kelimeler = temiz.split(' ').filter(Boolean);
+  if (kelimeler.length > 5) return [];
+  const bulunanlar = [];
+  const kullanildi = new Set();
+  for (let i = 0; i < kelimeler.length - 1; i++) {
+    if (kullanildi.has(i) || kullanildi.has(i+1)) continue;
+    const eslesen = CONFIG.CITIES.find(c => normalize(c) === kelimeler[i]+' '+kelimeler[i+1]);
+    if (eslesen) { bulunanlar.push({ sehir: eslesen, pos: i }); kullanildi.add(i); kullanildi.add(i+1); }
   }
-});
+  for (let i = 0; i < kelimeler.length; i++) {
+    if (kullanildi.has(i)) continue;
+    const eslesen = CONFIG.CITIES.find(c => normalize(c) === kelimeler[i]);
+    if (eslesen) { bulunanlar.push({ sehir: eslesen, pos: i }); kullanildi.add(i); }
+  }
+  const sehirDisi = kelimeler.filter((_, i) => !kullanildi.has(i)).filter(k => k.length > 2);
+  if (sehirDisi.length > 1) return [];
+  bulunanlar.sort((a,b) => a.pos - b.pos);
+  return bulunanlar.map(b => b.sehir);
+}
 
-client.on('disconnected', async reason => {
-  console.warn('⚠️  Bağlantı kesildi:', reason);
-  console.log('🔄 15 saniye sonra yeniden bağlanılıyor...');
-  temizleLockDosyalari();
-  setTimeout(async () => {
-    try { await client.initialize(); }
-    catch (e) { console.error('❌ Yeniden bağlanma başarısız:', e.message); process.exit(1); }
-  }, 15_000);
-});
+// Samsun bildirimi — hangi client gönderecek bilgisi eklendi
+async function samsunBildirimiGonder(senderClient, ilan) {
+  try {
+    const hash = contentHash(ilan.text);
+    if (_samsunGonderildi.has(hash)) return;
+    _samsunGonderildi.add(hash);
+    setTimeout(() => _samsunGonderildi.delete(hash), 60*60*1000);
+    const hedefNumara = '905015303028@c.us';
+    const chat = await senderClient.getChatById(hedefNumara);
+    await chat.sendMessage('🔔 *YENİ SAMSUN İLANI*\n──────────────────────\n📍 *Grup:* ' + ilan.chatName + '\n⏱ ' + timeAgo(ilan.timestamp) + '\n\n' + ilan.text.trim());
+  } catch (err) { console.warn('⚠️ Samsun bildirimi gönderilemedi:', err.message); }
+}
+
+// ── Başlangıç: DB'deki tüm botları başlat ──────
+function mevcutBotlariBaslat() {
+  const dbBotlar = tumBotlar();
+  if (dbBotlar.length === 0) {
+    // Geriye dönük uyumluluk: eski tek bot varsa otomatik ekle
+    const eskiSessionVar = fs.existsSync(path.join(__dirname, '.wwebjs_auth', 'session-lojistik-bot'));
+    if (eskiSessionVar) {
+      botEkle({ isim: 'Ana Bot', clientId: 'lojistik-bot' });
+      botOlustur('lojistik-bot', 'Ana Bot');
+      console.log('🤖 Eski oturum bulundu, Ana Bot başlatıldı.');
+    } else {
+      console.log('ℹ️  Kayıtlı bot yok. Admin panelinden bot ekleyin.');
+    }
+    return;
+  }
+  dbBotlar.forEach(bot => {
+    console.log(`🤖 [${bot.clientId}] "${bot.isim}" başlatılıyor...`);
+    botOlustur(bot.clientId, bot.isim);
+  });
+}
 
 process.on('unhandledRejection', r => console.warn('⚠️  Hata (devam):', r?.message || r));
 process.on('uncaughtException', e => console.warn('⚠️  Exception (devam):', e.message));
 
-// ── Düzgün Kapanma ──────────────────────────────
-// PM2 stop/restart veya Ctrl+C sinyallerinde Chrome'u düzgün kapat
+// Düzgün kapanma
 let _kapaniyor = false;
 async function gracefulShutdown(signal) {
   if (_kapaniyor) return;
   _kapaniyor = true;
-  console.log(`\n🛑 ${signal} alındı, düzgün kapatılıyor...`);
-  try {
-    await client.destroy();
-    console.log('✅ WhatsApp bağlantısı kapatıldı.');
-  } catch (e) {
-    console.warn('⚠️  Client kapatma hatası:', e.message);
-  }
-  temizleLockDosyalari();
+  console.log(`\n🛑 ${signal} alındı, kapatılıyor...`);
+  for (const [clientId] of botManager) { await botDurdur(clientId); }
   process.exit(0);
 }
-
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM')); // PM2 stop
-process.on('SIGINT',  () => gracefulShutdown('SIGINT'));  // Ctrl+C
-
-// ── Lock Dosyası Temizleyici ─────────────────────
-// Başlarken veya kapanırken SingletonLock kalıntılarını sil
-function temizleLockDosyalari() {
-  const fs       = require('fs');
-  const path     = require('path');
-  const sesyonDr = path.join(__dirname, '.wwebjs_auth', 'session-lojistik-bot');
-  ['SingletonLock', 'SingletonCookie', 'SingletonSocket'].forEach(f => {
-    const dosya = path.join(sesyonDr, f);
-    try { if (fs.existsSync(dosya)) { fs.unlinkSync(dosya); console.log(`🧹 ${f} temizlendi.`); } }
-    catch (e) { /* sessizce geç */ }
-  });
-}
-
-// Başlarken lock kalıntılarını temizle
-temizleLockDosyalari();
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
 
 // Web panelini başlat
-startServer(store, CONFIG);
+startServer(store, CONFIG, botManager, botOlustur, botDurdur, qrWaiters);
 
-client.initialize();
+mevcutBotlariBaslat();

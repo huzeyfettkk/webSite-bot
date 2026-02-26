@@ -437,6 +437,7 @@ tr:hover td{background:#f8faff}
       <button class="navItem" onclick="showPage('kullanicilar')" id="nav-kullanicilar"><span class="icon">👥</span> Kullanıcılar</button>
       <button class="navItem" onclick="showPage('blacklist')" id="nav-blacklist"><span class="icon">🚫</span> Kara Liste</button>
       <button class="navItem" onclick="showPage('hareketler')" id="nav-hareketler"><span class="icon">📊</span> Hareketler</button>
+      <button class="navItem" onclick="showPage('botlar')" id="nav-botlar"><span class="icon">🤖</span> Botlar</button>
     </div>
     <div class="sidebarBottom">
       <div class="userBadge" onclick="showPage('profil');closeSidebar()">
@@ -652,6 +653,41 @@ tr:hover td{background:#f8faff}
       </div>
     </div>
 
+    <!-- Botlar -->
+    <div id="page-botlar" style="display:none">
+      <div class="pageHeader">
+        <div><div class="pageTitle">🤖 WhatsApp Botları</div><div class="pageSubtitle">Bağlı botları yönetin, yeni bot ekleyin</div></div>
+        <button class="btn" onclick="botEkleModal()">➕ Yeni Bot</button>
+      </div>
+      <div id="botlarGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px"></div>
+    </div>
+
+    <!-- QR Modal -->
+    <div id="qrModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border-radius:16px;padding:32px;max-width:380px;width:90%;text-align:center;position:relative">
+        <button onclick="qrModalKapat()" style="position:absolute;top:12px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)">✕</button>
+        <div style="font-size:22px;font-weight:700;margin-bottom:6px" id="qrModalBaslik">QR Kod</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:20px" id="qrModalAlt">WhatsApp'ta Bağlı Cihazlar → Cihaz Ekle → QR'ı tarat</div>
+        <div id="qrModalIcerik" style="min-height:260px;display:flex;align-items:center;justify-content:center">
+          <div class="spinner"></div>
+        </div>
+        <div id="qrModalDurum" style="margin-top:16px;font-size:13px;color:var(--muted)"></div>
+      </div>
+    </div>
+
+    <!-- Bot Ekle Modal -->
+    <div id="botEkleModalEl" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border-radius:16px;padding:32px;max-width:360px;width:90%">
+        <div style="font-size:18px;font-weight:700;margin-bottom:20px">➕ Yeni Bot Ekle</div>
+        <label style="font-size:13px;font-weight:600;color:var(--muted)">Bot İsmi</label>
+        <input id="yeniBotIsim" type="text" class="searchInput" style="width:100%;margin-top:6px;margin-bottom:20px;box-sizing:border-box" placeholder="Örn: Ana Bot, Grup Bot 2...">
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btnReset" onclick="document.getElementById('botEkleModalEl').style.display='none'">İptal</button>
+          <button class="btnSearch" onclick="botEkleKaydet()">Ekle ve QR Göster</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -747,7 +783,7 @@ function initApp(){
 }
 
 function showPage(page){
-  ['ilanlar','profil','ilanver','kullanicilar','blacklist','hareketler'].forEach(p=>{
+  ['ilanlar','profil','ilanver','kullanicilar','blacklist','hareketler','botlar'].forEach(p=>{
     const el=document.getElementById('page-'+p);if(el)el.style.display=p===page?'block':'none';
     const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);
   });
@@ -756,6 +792,7 @@ function showPage(page){
   if(page==='kullanicilar')loadUsers();
   if(page==='blacklist')loadBlacklist();
   if(page==='hareketler')loadHareketler();
+  if(page==='botlar')loadBotlar();
 }
 
 async function api(url,opts={}){
@@ -1439,6 +1476,129 @@ async function loadHareketler(){
     <td style="font-family:monospace;font-size:12px">${esc(l.ipAddress||'-')}</td>
     <td style="white-space:nowrap;color:var(--muted)">${new Date(l.timestamp).toLocaleString('tr-TR')}</td>
   </tr>`).join('');
+}
+
+// ── Bot Yönetimi ─────────────────────────────────
+let _qrEventSource = null;
+
+const durumLabel = {
+  'bekliyor':         { cls:'#f59e0b', icon:'⏳', text:'Bekliyor' },
+  'baslatiliyor':     { cls:'#3b82f6', icon:'🔄', text:'Başlatılıyor' },
+  'qr_bekleniyor':    { cls:'#8b5cf6', icon:'📱', text:'QR Bekleniyor' },
+  'dogrulandi':       { cls:'#3b82f6', icon:'✅', text:'Doğrulandı' },
+  'hazir':            { cls:'#10b981', icon:'🟢', text:'Hazır' },
+  'baglanti_kesildi': { cls:'#ef4444', icon:'🔴', text:'Bağlantı Kesildi' },
+  'hata':             { cls:'#ef4444', icon:'❌', text:'Hata' },
+};
+
+async function loadBotlar(){
+  const data = await api('/api/bots');
+  if(!data) return;
+  const grid = document.getElementById('botlarGrid');
+  if(!grid) return;
+  if(!data.length){
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)">
+      <div style="font-size:48px;margin-bottom:12px">🤖</div>
+      <div style="font-size:16px;font-weight:600">Henüz bot eklenmedi</div>
+      <div style="font-size:13px;margin-top:6px">Sağ üstteki "Yeni Bot" butonuna tıklayın</div>
+    </div>`;
+    return;
+  }
+  grid.innerHTML = data.map(bot => {
+    const d = durumLabel[bot.durum] || durumLabel['bekliyor'];
+    return `
+    <div class="card" style="padding:20px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px">
+        <div>
+          <div style="font-size:16px;font-weight:700">${esc(bot.isim)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;font-family:monospace">${esc(bot.clientId)}</div>
+        </div>
+        <span style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:20px;background:${d.cls}20;color:${d.cls}">${d.icon} ${d.text}</span>
+      </div>
+      ${bot.telefon ? `<div style="font-size:13px;color:var(--muted);margin-bottom:12px">📞 +${esc(bot.telefon)}</div>` : ''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${bot.durum !== 'hazir' ? `<button class="btnSearch" style="font-size:12px;padding:7px 12px" onclick="qrGoster('${esc(bot.clientId)}','${esc(bot.isim)}')">📱 QR Göster</button>` : ''}
+        <button class="btn" style="font-size:12px;padding:7px 12px" onclick="botRestart('${esc(bot.clientId)}')">🔄 Yeniden Başlat</button>
+        <button class="btnReset" style="font-size:12px;padding:7px 12px;background:#fee2e2;color:#dc2626;border:none" onclick="botSilOnay('${esc(bot.clientId)}','${esc(bot.isim)}')">🗑️ Sil</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function botEkleModal(){
+  document.getElementById('yeniBotIsim').value = '';
+  document.getElementById('botEkleModalEl').style.display = 'flex';
+  setTimeout(() => document.getElementById('yeniBotIsim').focus(), 100);
+}
+
+async function botEkleKaydet(){
+  const isim = document.getElementById('yeniBotIsim').value.trim();
+  if(!isim){ alert('Bot ismi girin'); return; }
+  document.getElementById('botEkleModalEl').style.display = 'none';
+  const data = await api('/api/bots', { method:'POST', body: JSON.stringify({ isim }) });
+  if(!data?.ok) return;
+  loadBotlar();
+  // QR modal'ı hemen aç
+  setTimeout(() => qrGoster(data.clientId, isim), 500);
+}
+
+function qrGoster(clientId, isim){
+  document.getElementById('qrModalBaslik').textContent = '📱 ' + isim;
+  document.getElementById('qrModalAlt').textContent = 'WhatsApp → Bağlı Cihazlar → Cihaz Ekle → QR\'ı tarat';
+  document.getElementById('qrModalIcerik').innerHTML = '<div class="spinner"></div>';
+  document.getElementById('qrModalDurum').textContent = 'QR bekleniyor...';
+  document.getElementById('qrModal').style.display = 'flex';
+
+  // Eski SSE kapat
+  if(_qrEventSource){ _qrEventSource.close(); _qrEventSource = null; }
+
+  // SSE bağlantısı aç
+  _qrEventSource = new EventSource('/api/bots/' + encodeURIComponent(clientId) + '/qr?token=' + encodeURIComponent(token));
+
+  _qrEventSource.onmessage = async e => {
+    try {
+      const msg = JSON.parse(e.data);
+      if(msg.tip === 'qr_hazir'){
+        // PNG endpoint'inden çek — timestamp ile cache'i atla
+        const imgUrl = '/api/bots/' + encodeURIComponent(clientId) + '/qr-image?token=' + encodeURIComponent(token) + '&t=' + Date.now();
+        document.getElementById('qrModalIcerik').innerHTML =
+          `<img src="${imgUrl}" style="width:256px;height:256px;border-radius:10px;display:block" alt="QR Kod" onerror="this.parentNode.innerHTML='<div style=color:#ef4444>QR yüklenemedi</div>'">`;
+        document.getElementById('qrModalDurum').textContent = '📱 WhatsApp → Bağlı Cihazlar → Cihaz Ekle → QR\'ı tarat';
+      } else if(msg.tip === 'dogrulandi'){
+        document.getElementById('qrModalIcerik').innerHTML = '<div style="font-size:56px">✅</div>';
+        document.getElementById('qrModalDurum').textContent = 'Doğrulandı! Bağlanıyor...';
+      } else if(msg.tip === 'hazir'){
+        document.getElementById('qrModalIcerik').innerHTML = '<div style="font-size:56px">🟢</div>';
+        document.getElementById('qrModalDurum').textContent = '✅ Bot başarıyla bağlandı!';
+        _qrEventSource.close(); _qrEventSource = null;
+        setTimeout(() => { qrModalKapat(); loadBotlar(); }, 2500);
+      } else if(msg.tip === 'baglanti_kesildi'){
+        document.getElementById('qrModalIcerik').innerHTML = '<div style="font-size:56px">🔴</div>';
+        document.getElementById('qrModalDurum').textContent = 'Bağlantı kesildi';
+      }
+    } catch {}
+  };
+
+  _qrEventSource.onerror = () => {
+    document.getElementById('qrModalDurum').textContent = '⚠️ Bağlantı hatası — sayfayı yenileyin';
+  };
+}
+
+function qrModalKapat(){
+  document.getElementById('qrModal').style.display = 'none';
+  if(_qrEventSource){ _qrEventSource.close(); _qrEventSource = null; }
+}
+
+async function botRestart(clientId){
+  if(!confirm('Bot yeniden başlatılsın mı?')) return;
+  await api('/api/bots/' + encodeURIComponent(clientId) + '/restart', { method:'POST' });
+  setTimeout(loadBotlar, 2000);
+}
+
+async function botSilOnay(clientId, isim){
+  if(!confirm('"' + isim + '" botu silinsin mi? WhatsApp oturumu da silinecek.')) return;
+  await api('/api/bots/' + encodeURIComponent(clientId), { method:'DELETE' });
+  loadBotlar();
 }
 
 // Başlat

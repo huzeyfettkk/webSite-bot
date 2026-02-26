@@ -20,6 +20,7 @@ const {
   kullaniciBulGoogleId, kullaniciEkle, kullaniciGuncelle,
   tumKullanicilar, kullaniciSil,
   logEkle, loglariGetir,
+  botEkle, botGuncelle, botSil, tumBotlar, botBul,
 } = require('./db');
 
 const app    = express();
@@ -94,7 +95,8 @@ passport.serializeUser((user, done) => done(null, user.id));
 passport.deserializeUser((id, done) => done(null, kullaniciBul(id) || null));
 
 function authMiddleware(req, res, next) {
-  const token = req.headers.authorization?.split(' ')[1];
+  // Header'dan veya query param'dan token al (SSE için query param gerekli)
+  const token = req.headers.authorization?.split(' ')[1] || req.query.token;
   if (!token) return res.status(401).json({ error: 'Token gerekli' });
   try { req.user = jwt.verify(token, SECRET); next(); }
   catch { res.status(401).json({ error: 'Geçersiz token' }); }
@@ -373,8 +375,12 @@ function geminiIste(prompt) {
 }
 
 // ── İlan Rotaları ───────────────────────────────
-let _store = null, _config = null;
-function setStore(store, config) { _store = store; _config = config; }
+let _store = null, _config = null, _botManager = null, _botOlustur = null, _botDurdur = null, _qrWaiters = null;
+function setStore(store, config, botManager, botOlustur, botDurdur, qrWaiters) {
+  _store = store; _config = config;
+  _botManager = botManager; _botOlustur = botOlustur;
+  _botDurdur = botDurdur; _qrWaiters = qrWaiters;
+}
 
 // Normalize — server tarafında tek merkezi fonksiyon
 const normS = s => String(s||'')
@@ -515,8 +521,112 @@ app.get('/auth/google/callback',
   }
 );
 
-function startServer(store, config) {
-  setStore(store, config);
+// ── Bot Yönetimi API ────────────────────────────
+
+// Tüm botları listele
+app.get('/api/bots', authMiddleware, adminMiddleware, (req, res) => {
+  const dbBotlar = tumBotlar();
+  // Canlı durum ile birleştir
+  const bots = dbBotlar.map(b => {
+    const live = _botManager?.get(b.clientId);
+    return {
+      ...b,
+      durum:   live?.durum   || b.durum,
+      telefon: live?.telefon || b.telefon || '',
+      aktif:   !!live,
+    };
+  });
+  res.json(bots);
+});
+
+// Yeni bot ekle
+app.post('/api/bots', authMiddleware, adminMiddleware, (req, res) => {
+  const { isim } = req.body;
+  if (!isim?.trim()) return res.status(400).json({ error: 'Bot ismi gerekli' });
+  const clientId = 'bot-' + Date.now();
+  botEkle({ isim: isim.trim(), clientId });
+  // Başlat
+  _botOlustur?.(clientId, isim.trim());
+  logEkle({ userId: req.user.id, action: 'bot_ekle', detail: isim, ipAddress: '' });
+  res.json({ ok: true, clientId, isim: isim.trim() });
+});
+
+// Bot sil
+app.delete('/api/bots/:clientId', authMiddleware, adminMiddleware, async (req, res) => {
+  const { clientId } = req.params;
+  await _botDurdur?.(clientId);
+  botSil(clientId);
+  // Session klasörünü de sil
+  const path = require('path');
+  const fs   = require('fs');
+  const dir  = path.join(__dirname, '.wwebjs_auth', 'session-' + clientId);
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+  logEkle({ userId: req.user.id, action: 'bot_sil', detail: clientId, ipAddress: '' });
+  res.json({ ok: true });
+});
+
+// Bot yeniden başlat
+app.post('/api/bots/:clientId/restart', authMiddleware, adminMiddleware, async (req, res) => {
+  const { clientId } = req.params;
+  const bot = botBul(clientId);
+  if (!bot) return res.status(404).json({ error: 'Bot bulunamadı' });
+  await _botDurdur?.(clientId);
+  setTimeout(() => _botOlustur?.(clientId, bot.isim), 2000);
+  res.json({ ok: true });
+});
+
+// QR PNG endpoint — qrcode paketi ile PNG üret
+app.get('/api/bots/:clientId/qr-image', authMiddleware, adminMiddleware, async (req, res) => {
+  const { clientId } = req.params;
+  const live = _botManager?.get(clientId);
+  if (!live?.qrData) return res.status(404).json({ error: 'QR yok' });
+  try {
+    const QRCode = require('qrcode');
+    const png = await QRCode.toBuffer(live.qrData, { width: 280, margin: 2, color: { dark: '#1e293b', light: '#ffffff' } });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(png);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// QR SSE stream — bot bağlanana kadar QR verisi gönderir
+app.get('/api/bots/:clientId/qr', authMiddleware, adminMiddleware, (req, res) => {
+  const { clientId } = req.params;
+
+  // SSE header'ları
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  // Bu bağlantıyı waiter listesine ekle
+  if (!_qrWaiters.has(clientId)) _qrWaiters.set(clientId, []);
+  const waiters = _qrWaiters.get(clientId);
+  waiters.push(res);
+
+  // Zaten QR varsa hemen gönder
+  const live = _botManager?.get(clientId);
+  if (live?.qrData) {
+    res.write(`data: ${JSON.stringify({ tip: 'qr_hazir' })}\n\n`);
+  } else if (live?.durum === 'hazir') {
+    res.write(`data: ${JSON.stringify({ tip: 'hazir' })}\n\n`);
+  }
+
+  // Heartbeat — bağlantı canlı kalsın
+  const hb = setInterval(() => { try { res.write(': heartbeat\n\n'); } catch { clearInterval(hb); } }, 20000);
+
+  req.on('close', () => {
+    clearInterval(hb);
+    const idx = waiters.indexOf(res);
+    if (idx !== -1) waiters.splice(idx, 1);
+  });
+});
+
+function startServer(store, config, botManager, botOlustur, botDurdur, qrWaiters) {
+  setStore(store, config, botManager, botOlustur, botDurdur, qrWaiters);
   app.listen(PORT, () => console.log(`🌐 YükleGit paneli: http://localhost:${PORT}`));
 }
 
