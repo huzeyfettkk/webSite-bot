@@ -778,8 +778,8 @@ async function loadIlanlar(s1,s2){
   const ilanlar=data.ilanlar||data;
   if(data.hata){document.getElementById('ilanCountNum').textContent='0';document.getElementById('ilanList').innerHTML='<div class="emptyState"><div class="emptyIcon">🔍</div><p>'+esc(data.hata)+'</p></div>';return;}
   const allTerms = new Set([...(data.matchedTerms||[]),...getSearchTags()].map(t=>t.toLowerCase()).filter(Boolean));
-  const matchedTerms = [...allTerms];
-  renderIlanlar(ilanlar,matchedTerms);loadStats();
+  renderIlanlar(ilanlar,[...allTerms], data.ilceler1||[], data.ilceler2||[]);
+  loadStats();
 }
 
 // Çoklu nereden × nereye araması
@@ -815,9 +815,12 @@ async function loadIlanlarCoklu(neredenList, nereyeList){
     // Birleştir — hash bazlı duplicate temizle
     const ilanMap = new Map();
     const allMatchedTerms = new Set(getSearchTags().map(t=>t.toLowerCase()));
+    let mergedIlceler1 = [], mergedIlceler2 = [];
     for(const data of sonuclar){
       if(!data||data.hata) continue;
       (data.matchedTerms||[]).forEach(t=>allMatchedTerms.add(t.toLowerCase()));
+      if(data.ilceler1) mergedIlceler1 = [...new Set([...mergedIlceler1,...data.ilceler1])];
+      if(data.ilceler2) mergedIlceler2 = [...new Set([...mergedIlceler2,...data.ilceler2])];
       (data.ilanlar||[]).forEach(ilan=>{
         const key = ilan.hash||String(ilan.id||ilan.timestamp);
         if(!ilanMap.has(key)) ilanMap.set(key, ilan);
@@ -832,7 +835,7 @@ async function loadIlanlarCoklu(neredenList, nereyeList){
       document.getElementById('ilanList').innerHTML='<div class="emptyState"><div class="emptyIcon">📭</div><p>Aradığınız kriterlere uygun ilan bulunamadı.</p></div>';
       return;
     }
-    renderIlanlar(ilanlar,[...allMatchedTerms]);
+    renderIlanlar(ilanlar,[...allMatchedTerms], mergedIlceler1, mergedIlceler2);
     loadStats();
   } catch(e){
     console.error('Çoklu arama hata:',e);
@@ -840,30 +843,29 @@ async function loadIlanlarCoklu(neredenList, nereyeList){
   }
 }
 
-function renderIlanlar(ilanlar, matchedTerms=[]){
+function renderIlanlar(ilanlar, matchedTerms=[], ilceler1=[], ilceler2=[]){
   document.getElementById('ilanCountNum').textContent = ilanlar.length;
   if(!ilanlar.length){
     document.getElementById('ilanList').innerHTML = '<div class="emptyState"><div class="emptyIcon">📭</div><p>Aradığınız kriterlere uygun ilan bulunamadı.</p></div>';
     return;
   }
 
-  const s1 = dualState.nereden[0] || null;
-  const s2 = dualState.nereye[0]  || null;
+  const aramaVar = dualState.nereden.length > 0 || dualState.nereye.length > 0;
 
   document.getElementById('ilanList').innerHTML = ilanlar.map((ilan, i) => {
     const text = ilan.text || '';
 
-    // Arama varsa satır bazlı akıllı render
     let ilanHTML = '';
-    if(s1 || s2){
-      ilanHTML = renderSatirlar(text, matchedTerms, s1, s2);
+    if(aramaVar){
+      // ilceler1/ilceler2 direkt geçir — satır bazlı yön kontrolü için
+      ilanHTML = renderSatirlar(text, matchedTerms, ilceler1, ilceler2);
     } else {
       ilanHTML = `<div class="ilanText">${hlText(text, matchedTerms)}</div>`;
     }
 
     // Sadece eşleşen şehir etiketlerini göster
     const etiketSehirler = (ilan.cities || []).filter(c => {
-      if(!s1 && !s2) return true; // arama yoksa hepsini göster
+      if(!aramaVar) return true;
       const nc = normTR(c);
       return matchedTerms.some(t => normTR(t) === nc);
     });
@@ -884,7 +886,7 @@ function renderIlanlar(ilanlar, matchedTerms=[]){
 // - Eşleşen satırları tam göster + highlight
 // - Eşleşmeyen satırları soluklaştır
 // - Ters yön eşleşmesini (s2→s1) soluk göster
-function renderSatirlar(text, matchedTerms, s1, s2){
+function renderSatirlar(text, matchedTerms, ilceler1, ilceler2){
   const norm = s => String(s||'')
     .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
     .replace(/Ğ/g,'g').replace(/ğ/g,'g')
@@ -894,43 +896,46 @@ function renderSatirlar(text, matchedTerms, s1, s2){
     .replace(/Ç/g,'c').replace(/ç/g,'c')
     .toLowerCase().replace(/[^a-z0-9]/g,' ').replace(/\s+/g,' ').trim();
 
-  const n1 = s1 ? norm(s1) : null;
-  const n2 = s2 ? norm(s2) : null;
+  // il+ilçe normalize listeleri
+  const nList1 = (ilceler1||[]).map(norm).filter(Boolean);
+  const nList2 = (ilceler2||[]).map(norm).filter(Boolean);
+  const normTerms = matchedTerms.map(norm).filter(Boolean);
 
-  // Arama terimlerinin normalize halleri
-  const normTerms = matchedTerms.map(t => norm(t)).filter(Boolean);
+  const telRegex = /(\+?[\d][\d\s\-().]{7,}[\d])/;
+  const aramaIkiYon = nList1.length > 0 && nList2.length > 0;
 
   const satirlar = text.split(/\n/);
 
   const parcalar = satirlar.map(satir => {
     const ns = norm(satir);
 
-    // Satırda hiç eşleşen terim yok — soluklaştır
-    const satirdeEslesme = normTerms.some(t => ns.includes(t));
+    // Telefon satırı — HER ZAMAN tam görünür ve tıklanabilir
+    if(telRegex.test(satir)){
+      return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
+    }
+
+    // Satırda hiç eşleşen terim yok → soluklaştır
+    const satirdeEslesme = normTerms.some(t => t && ns.includes(t));
     if(!satirdeEslesme){
       return `<span class="satirSoluk">${esc(satir)}</span>`;
     }
 
-    // İki şehir araması varsa yön kontrolü
-    if(n1 && n2){
-      const p1 = ns.indexOf(n1);
-      const p2 = ns.indexOf(n2);
-      const dogruYon  = p1 !== -1 && p2 !== -1 && p1 < p2;  // s1 → s2 ✅
-      const tersYon   = p1 !== -1 && p2 !== -1 && p2 < p1;  // s2 → s1 ❌
+    // İki taraflı arama → yön kontrolü (ilçeler dahil)
+    if(aramaIkiYon){
+      let p1 = Infinity;
+      for(const n of nList1){ const i=ns.indexOf(n); if(i!==-1&&i<p1) p1=i; }
+      let p2 = Infinity;
+      for(const n of nList2){ const i=ns.indexOf(n); if(i!==-1&&i<p2) p2=i; }
 
-      if(dogruYon){
-        // Doğru yön — tam highlight
-        return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
-      } else if(tersYon){
-        // Ters yön — soluk + uyarı
-        return `<span class="satirTers" title="Ters yön">${hlText(satir, matchedTerms)} <span class="tersIkon">↩</span></span>`;
-      } else {
-        // Sadece bir şehir geçiyor — normal highlight
-        return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
+      if(p1!==Infinity && p2!==Infinity){
+        if(p1 < p2) return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
+        if(p2 < p1) return `<span class="satirTers" title="Ters yön">${hlText(satir, matchedTerms)} <span class="tersIkon">↩</span></span>`;
       }
+      // Sadece bir taraf geçiyor — eşleşen satır
+      return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
     }
 
-    // Tek şehir araması — eşleşen satır
+    // Tek şehir araması
     return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
   });
 

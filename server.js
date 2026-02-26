@@ -215,7 +215,24 @@ app.post('/api/logout', authMiddleware, (req, res) => {
 });
 
 
-// ── Gemini AI Arama ─────────────────────────────
+// ── Debug: Sakarya→Bolu testi ──────────────────
+app.get('/api/debug-sakarya', authMiddleware, (req, res) => {
+  const ilceler1 = getIlVeIlceleri('sakarya');
+  const ilceler2 = getIlVeIlceleri('bolu');
+  const rows = ilanAra('sakarya', 'bolu', ilceler1, ilceler2);
+  const tumSakarya = ilanAra('sakarya', null, ilceler1, []);
+  res.json({
+    ilanAraVersiyon: 'v2-ilce-destekli',
+    ilceler1_say: ilceler1.length,
+    ilceler1_ornek: ilceler1.slice(0,4),
+    ilceler2_say: ilceler2.length,
+    sakarya_bolu_sonuc: rows.length,
+    sadece_sakarya_sonuc: tumSakarya.length,
+    sadece_sakarya_cities: tumSakarya.slice(0,3).map(r => r.cities),
+  });
+});
+
+
 app.post('/api/ai-ara', authMiddleware, async (req, res) => {
   if (!GEMINI_API_KEY) {
     return res.status(503).json({ error: 'AI özelliği yapılandırılmamış.' });
@@ -405,7 +422,6 @@ app.get('/api/ilanlar', authMiddleware, (req, res) => {
     const ilceler1 = getIlVeIlceleri(bulunan1);
     const ilceler2 = bulunan2 ? getIlVeIlceleri(bulunan2) : [];
     matchedTerms = [...ilceler1, ...ilceler2];
-
     // SQLite'tan sonuçları al — il + ilçe listesiyle genişletilmiş arama
     const dbRows = ilanAra(bulunan1, bulunan2 || null, ilceler1, ilceler2);
     const dbIlanlar = dbRows.map(r => ({
@@ -436,7 +452,7 @@ app.get('/api/ilanlar', authMiddleware, (req, res) => {
     const ilanlar = [...hashMap.values()]
       .sort((a, b) => b.timestamp - a.timestamp);
 
-    return res.json({ ilanlar, matchedTerms });
+    return res.json({ ilanlar, matchedTerms, ilceler1, ilceler2 });
   }
 
   // Arama yoksa tüm ilanlar
