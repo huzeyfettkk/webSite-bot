@@ -2,6 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
+<meta name="google-site-verification" content="el9cCEj2qHYnt1dyXvxDxI6Gq6dyKxxOSHSlIbKwrm4" />
 <meta name="theme-color" content="#1a5fdb">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -135,11 +136,13 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .ilanList{display:flex;flex-direction:column;gap:10px}
 .ilanCard{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);animation:fadeUp .25s ease;transition:box-shadow .2s}
 .ilanCard:hover{box-shadow:var(--shadow-md)}
+.paylasBtn{display:inline-flex;align-items:center;gap:5px;margin-left:auto;background:none;border:1.5px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11.5px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .15s}
+.paylasBtn:hover{border-color:var(--accent);color:var(--accent);background:var(--bg)}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .ilanMeta{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
 .ilanNum{font-family:'Outfit',sans-serif;font-size:11px;font-weight:700;color:white;background:var(--accent);padding:2px 8px;border-radius:4px;flex-shrink:0}
 .ilanGrup{font-size:13px;font-weight:600;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}
-.ilanTime{margin-left:auto;font-size:11px;color:var(--muted);background:var(--bg);padding:3px 9px;border-radius:20px;border:1px solid var(--border);white-space:nowrap;flex-shrink:0}
+.ilanTime{font-size:11px;color:var(--muted);background:var(--bg);padding:3px 9px;border-radius:20px;border:1px solid var(--border);white-space:nowrap;flex-shrink:0}
 .ilanText{font-size:13.5px;line-height:1.75;color:var(--text);white-space:pre-wrap;word-break:break-word}
 .ilanText .hl{background:#dbeafe;color:#1e40af;font-weight:700;padding:0 3px;border-radius:3px}
 /* Satır bazlı render stilleri */
@@ -1001,6 +1004,10 @@ function renderIlanlar(ilanlar, matchedTerms=[], ilceler1=[], ilceler2=[]){
       <div class="ilanMeta">
         <span class="ilanNum">İlan ${i+1}</span>
         <span class="ilanTime">⏱ ${timeAgo(ilan.timestamp)}</span>
+        <button class="paylasBtn" onclick="ilanPaylas(this)" data-text="${esc(ilan.text||'').replace(/"/g,'&quot;')}" data-chat="${esc(ilan.chatName||'')}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          Paylaş
+        </button>
       </div>
       ${ilanHTML}
       ${etiketSehirler.length ? `<div class="ilanSehirler">${etiketSehirler.map(c=>`<span class="sehirTag">${esc(formatSehir(c))}</span>`).join('')}</div>` : ''}
@@ -1069,43 +1076,48 @@ function renderSatirlar(text, matchedTerms, ilceler1, ilceler2){
 }
 
 function hlText(text, terms){
-  if(!terms || !terms.length) return esc(text);
-  // Türkçe karakter varyantlarını oluştur
-  function trVaryant(s){
-    return s
-      .replace(/i/g,'[iİ]').replace(/ı/g,'[ıI]')
-      .replace(/g/g,'[gğG]').replace(/u/g,'[uüU]')
-      .replace(/s/g,'[sşS]').replace(/o/g,'[oöO]')
-      .replace(/c/g,'[cçC]');
+  // 1. Metni parçalara böl: tel numaraları ayrı, gerisi ayrı
+  const TEL_RE = /(?<!\d)((?:\+90|0)5\d{9})(?!\d)/g;
+  const parcalar = []; // {type:'text'|'tel', val}
+  let son = 0, m;
+  TEL_RE.lastIndex = 0;
+  while ((m = TEL_RE.exec(text)) !== null) {
+    if (m.index > son) parcalar.push({ type: 'text', val: text.slice(son, m.index) });
+    parcalar.push({ type: 'tel', val: m[1] });
+    son = m.index + m[0].length;
   }
-  let result = esc(text);
-  // Türkiye telefon numaralarını tıklanabilir yap: 05XXXXXXXXX veya +905XXXXXXXXX
-  result = result.replace(/(?<!\d)((?:\+90|0)5\d{9})(?!\d)/g, (m) => {
-    const intl = m.startsWith('+') ? m : '+9' + m;
-    return '<a href="tel:' + intl + '" class="telLink">' + m + '</a>';
-  });
-  // Şehir highlight — ama <a> tag'lerinin içini bozma
-  // Tag'leri placeholder'a al, sonra geri koy
-  const tagMap = [];
-  result = result.replace(/<[^>]+>/g, m => {
-    const ph = '\x00TAG' + tagMap.length + '\x00';
-    tagMap.push(m);
-    return ph;
-  });
-  const sorted=[...terms].filter(Boolean).sort((a,b)=>b.length-a.length);
-  sorted.forEach(term=>{
-    try{
-      const pattern = trVaryant(term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
-      const re = new RegExp('(?<![a-zA-ZğüşıöçĞÜŞİÖÇ])(' + pattern + ')(?![a-zA-ZğüşıöçĞÜŞİÖÇ])', 'gi');
-      result = result.replace(re, (match, p1) => {
-        if(match.includes('class="hl"')) return match;
-        return '<span class="hl">'+p1+'</span>';
-      });
-    }catch(e){}
-  });
-  // Placeholder'ları geri koy
-  result = result.replace(/\x00TAG(\d+)\x00/g, (_, i) => tagMap[+i]);
-  return result;
+  if (son < text.length) parcalar.push({ type: 'text', val: text.slice(son) });
+
+  // 2. Türkçe karakter varyantı
+  function trVaryant(s){
+    return s.replace(/i/g,'[iİ]').replace(/ı/g,'[ıI]')
+            .replace(/g/g,'[gğG]').replace(/u/g,'[uüU]')
+            .replace(/s/g,'[sşS]').replace(/o/g,'[oöO]')
+            .replace(/c/g,'[cçC]');
+  }
+
+  // 3. Metin parçalarına şehir highlight uygula
+  const sorted = (terms||[]).filter(Boolean).sort((a,b)=>b.length-a.length);
+  function highlightText(str) {
+    let r = esc(str);
+    sorted.forEach(term => {
+      try {
+        const pat = trVaryant(term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+        const re = new RegExp('(?<![a-zA-ZğüşıöçĞÜŞİÖÇ])('+pat+')(?![a-zA-ZğüşıöçĞÜŞİÖÇ])','gi');
+        r = r.replace(re, (_,p1) => '<span class="hl">'+p1+'</span>');
+      } catch(e){}
+    });
+    return r;
+  }
+
+  // 4. Birleştir
+  return parcalar.map(p => {
+    if (p.type === 'tel') {
+      const intl = p.val.startsWith('+') ? p.val : '+9' + p.val;
+      return '<a href="tel:'+intl+'" class="telLink">'+esc(p.val)+'</a>';
+    }
+    return highlightText(p.val);
+  }).join('');
 }
 
 function updateCharCount(){
@@ -1136,6 +1148,43 @@ async function ilanGonder(){
   btn.disabled=false;btn.textContent='📢 İlanı Yayınla';
 }
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+async function ilanPaylas(btn) {
+  const text = btn.getAttribute('data-text') || '';
+  const chat = btn.getAttribute('data-chat') || '';
+  const paylasMetin = (chat ? '📦 ' + chat + '\n' : '') + text + '\n\n🌐 yuklegit.tr';
+
+  // Web Share API varsa kullan (mobil)
+  if (navigator.share) {
+    try {
+      await navigator.share({ text: paylasMetin });
+      return;
+    } catch(e) {
+      if (e.name === 'AbortError') return; // kullanıcı iptal etti
+    }
+  }
+  // Yoksa panoya kopyala
+  try {
+    await navigator.clipboard.writeText(paylasMetin);
+    const orig = btn.innerHTML;
+    btn.innerHTML = '✅ Kopyalandı';
+    btn.style.borderColor = '#16a34a';
+    btn.style.color = '#16a34a';
+    setTimeout(() => { btn.innerHTML = orig; btn.style.borderColor = ''; btn.style.color = ''; }, 2000);
+  } catch {
+    // Eski tarayıcı fallback
+    const ta = document.createElement('textarea');
+    ta.value = paylasMetin;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    const orig = btn.innerHTML;
+    btn.innerHTML = '✅ Kopyalandı';
+    setTimeout(() => { btn.innerHTML = orig; }, 2000);
+  }
+}
 function timeAgo(ts){
   const d=Math.floor((Date.now()-ts)/1000);
   if(d<60)return d+' sn önce';if(d<3600)return Math.floor(d/60)+' dk önce';
