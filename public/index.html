@@ -1085,19 +1085,27 @@ function hlText(text, terms){
     if(clean.length<10||clean.length>15)return m;
     return '<a href="tel:'+clean+'" class="telLink">'+m+'</a>';
   });
-  // Şehirleri uzundan kısaya sırala (önce uzun eşleşmeler)
+  // Şehir highlight — ama <a> tag'lerinin içini bozma
+  // Tag'leri placeholder'a al, sonra geri koy
+  const tagMap = [];
+  result = result.replace(/<[^>]+>/g, m => {
+    const ph = '\x00TAG' + tagMap.length + '\x00';
+    tagMap.push(m);
+    return ph;
+  });
   const sorted=[...terms].filter(Boolean).sort((a,b)=>b.length-a.length);
   sorted.forEach(term=>{
     try{
       const pattern = trVaryant(term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
       const re = new RegExp('(?<![a-zA-ZğüşıöçĞÜŞİÖÇ])(' + pattern + ')(?![a-zA-ZğüşıöçĞÜŞİÖÇ])', 'gi');
       result = result.replace(re, (match, p1) => {
-        // Zaten highlight içindeyse tekrar sarma
         if(match.includes('class="hl"')) return match;
         return '<span class="hl">'+p1+'</span>';
       });
     }catch(e){}
   });
+  // Placeholder'ları geri koy
+  result = result.replace(/\x00TAG(\d+)\x00/g, (_, i) => tagMap[+i]);
   return result;
 }
 

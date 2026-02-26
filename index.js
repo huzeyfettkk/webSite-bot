@@ -596,10 +596,41 @@ function botOlustur(clientId, isim) {
         const linePairs = extractLinePairs(body);
         const timestamp = msg.timestamp * 1000;
         const hash      = contentHash(body);
-        store.add(msg.from + '_' + msg.id.id, { text: body, cities, linePairs, chatName: chat.name || 'Grup', chatId: chat.id._serialized, senderName: msg.author || msg.from, timestamp });
-        ilanEkle({ hash: String(hash), text: body, cities, chatName: chat.name || 'Grup', chatId: chat.id._serialized, senderPhone: '', timestamp });
+
+        // Metinde telefon numarası var mı kontrol et
+        const metiндеТel = CONFIG.PHONE_REGEX.test(body);
+        CONFIG.PHONE_REGEX.lastIndex = 0;
+
+        // Gönderenin numarasını al (grup mesajlarında author, özel mesajlarda from)
+        let senderPhone = '';
+        try {
+          const rawNum = (msg.author || msg.from || '').replace('@c.us', '').replace('@g.us', '').replace(/\D/g, '');
+          if (rawNum.length >= 10) senderPhone = rawNum;
+        } catch {}
+
+        // Metinde tel yoksa gönderenin numarasını ilana ekle
+        let finalText = body;
+        if (!metiндеТel && senderPhone) {
+          finalText = body.trimEnd() + '\n📞 ' + senderPhone;
+          console.log(`📞 [${clientId}] Numara eklendi: ${senderPhone}`);
+        }
+
+        store.add(msg.from + '_' + msg.id.id, {
+          text: finalText, cities, linePairs,
+          chatName: chat.name || 'Grup',
+          chatId: chat.id._serialized,
+          senderName: msg.author || msg.from,
+          timestamp,
+        });
+        ilanEkle({
+          hash: String(hash), text: finalText, cities,
+          chatName: chat.name || 'Grup',
+          chatId: chat.id._serialized,
+          senderPhone,
+          timestamp,
+        });
         console.log(`💾 [${clientId}] ${chat.name} | ${cities.join(', ')}`);
-        if (isSamsunIlani(body)) samsunBildirimiGonder(client, { text: body, chatName: chat.name || 'Grup', timestamp });
+        if (isSamsunIlani(body)) samsunBildirimiGonder(client, { text: finalText, chatName: chat.name || 'Grup', timestamp });
       }
     } catch (e) { console.error(`❌ [${clientId}]`, e.message); }
   });
