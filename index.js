@@ -444,11 +444,14 @@ function puppeteerOpts() {
     args: [
       '--no-sandbox', '--disable-setuid-sandbox',
       '--disable-accelerated-2d-canvas', '--no-first-run', '--disable-gpu',
-      ...(process.platform === 'linux'
-        ? ['--disable-dev-shm-usage', '--no-zygote', '--single-process'] : []),
+      '--disable-dev-shm-usage', '--no-zygote', '--single-process',
+      '--disable-extensions', '--disable-background-networking',
+      '--disable-default-apps', '--disable-sync', '--disable-translate',
+      '--hide-scrollbars', '--mute-audio', '--safebrowsing-disable-auto-update',
+      '--js-flags=--max-old-space-size=256',
     ],
-    protocolTimeout: 120000,
-    timeout: 120000,
+    protocolTimeout: 180000,
+    timeout: 60000,
   };
 }
 
@@ -482,7 +485,7 @@ function botOlustur(clientId, isim) {
 
   const client = new Client({
     authStrategy: new LocalAuth({ clientId }),
-    qrMaxRetries: 3,
+    qrMaxRetries: 0,  // Sonsuz bekle — QR taranana kadar yenile
     puppeteer: puppeteerOpts(),
   });
 
@@ -527,12 +530,54 @@ function botOlustur(clientId, isim) {
       if (msg.isStatus) return;
       if (msg.from === 'status@broadcast') return;
       if (msg.id?.remote === 'status@broadcast') return;
+
       const chat = await msg.getChat();
+
+      // ── WhatsApp Kanalı (Newsletter) ──────────────
+      let isKanal = false;
+      try {
+        isKanal = chat.isChannel ||
+                  msg.from?.endsWith('@newsletter') ||
+                  msg.id?.remote?.endsWith('@newsletter');
+      } catch { isKanal = false; }
+
+      if (isKanal) {
+        try {
+          console.log(`📡 [${clientId}] KANAL MESAJI: ${chat.name || msg.from}`);
+          if (isIlan(body)) {
+            const cities    = extractCities(body);
+            const linePairs = extractLinePairs(body);
+            const timestamp = msg.timestamp * 1000;
+            const hash      = contentHash(body);
+            const kanalAdi  = chat.name || msg.from || 'Kanal';
+            store.add(msg.from + '_' + msg.id.id, { text: body, cities, linePairs, chatName: kanalAdi, chatId: msg.from, senderName: kanalAdi, timestamp });
+            ilanEkle({ hash: String(hash), text: body, cities, chatName: kanalAdi, chatId: msg.from, senderPhone: '', timestamp });
+            console.log(`💾 [${clientId}] 📡 Kanal: ${kanalAdi} | ${cities.join(', ')}`);
+          }
+        } catch (e) {
+          console.warn(`⚠️ [${clientId}] Kanal mesajı işlenemedi (önemsiz):`, e.message);
+        }
+        return;
+      }
 
       // Özel mesaj: şehir araması
       if (!chat.isGroup) {
         const sehirler = sehirCikarBot(body.trim());
-        if (!sehirler.length) return;
+
+        // Şehir araması değilse → karşılama mesajı gönder
+        if (!sehirler.length) {
+          const karsilama =
+            '👋 *Merhaba! YükleGit Destek Hattına hoş geldiniz.*\n\n' +
+            '🚛 *Ne yapabilirim?*\n' +
+            '• Şehir adı yazarak ilan arayabilirsiniz\n' +
+            '  _Örnek: İstanbul, Ankara → İstanbul_\n\n' +
+            '📦 *İlan aramak için:*\n' +
+            'Sadece şehir adını veya "şehir1 şehir2" şeklinde yazın.\n\n' +
+            '🌐 *Web paneli:* https://yuklegit.tr\n\n' +
+            '_Teknik destek için mesajınızı bırakın, en kısa sürede dönüş yapılacaktır._';
+          await msg.reply(karsilama);
+          return;
+        }
         const [city1, city2] = sehirler;
         const results = store.search(city1, city2 || null);
         const baslik = city2 ? `🔍 *${city1.toUpperCase()} → ${city2.toUpperCase()}*`
@@ -566,11 +611,26 @@ function botOlustur(clientId, isim) {
     durumGonder(clientId, 'baglanti_kesildi');
     console.warn(`⚠️  [${clientId}] Bağlantı kesildi: ${reason}`);
     temizleLock(clientId);
+
+    // QR taranmadıysa otomatik yeniden başlatma — admin panelinden yapılsın
+    // Gerçek bağlantı kopması ise (LOGOUT, NAVIGATION vb.) 30s sonra yeniden başlat
+    const qrSebep = String(reason).toLowerCase().includes('qr');
+    if (qrSebep) {
+      console.log(`ℹ️  [${clientId}] QR taranmadı — admin panelinden "QR Göster" ile yeniden deneyin`);
+      return;
+    }
+
     setTimeout(async () => {
       if (!botManager.has(clientId)) return;
       console.log(`🔄 [${clientId}] Yeniden bağlanılıyor...`);
-      try { await client.initialize(); } catch (e) { console.error(`❌ [${clientId}]`, e.message); }
-    }, 15_000);
+      try {
+        await bot.client.destroy();
+      } catch {}
+      // Yeni client oluştur
+      botManager.delete(clientId);
+      const dbBot = require('./db').botBul(clientId);
+      if (dbBot) botOlustur(clientId, dbBot.isim);
+    }, 30_000);
   });
 
   client.initialize().catch(e => {

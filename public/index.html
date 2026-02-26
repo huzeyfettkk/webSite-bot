@@ -432,6 +432,7 @@ tr:hover td{background:#f8faff}
     <button class="navItem active" onclick="showPage('ilanlar')" id="nav-ilanlar"><span class="icon">📋</span> İlanlar</button>
     <button class="navItem" onclick="showPage('profil')" id="nav-profil"><span class="icon">👤</span> Profilim</button>
     <button class="navItem" onclick="showPage('ilanver')" id="nav-ilanver"><span class="icon">✏️</span> İlan Ver</button>
+    <button class="navItem" onclick="showPage('iletisim')" id="nav-iletisim"><span class="icon">💬</span> İletişim</button>
     <div id="adminNav" style="display:none">
       <div class="navSection">Yönetim</div>
       <button class="navItem" onclick="showPage('kullanicilar')" id="nav-kullanicilar"><span class="icon">👥</span> Kullanıcılar</button>
@@ -662,6 +663,93 @@ tr:hover td{background:#f8faff}
       <div id="botlarGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px"></div>
     </div>
 
+    <!-- İletişim -->
+    <div id="page-iletisim" style="display:none">
+      <div class="pageHeader">
+        <div><div class="pageTitle">💬 Destek & İletişim</div><div class="pageSubtitle">Sorularınız için WhatsApp üzerinden bize ulaşın</div></div>
+      </div>
+
+      <!-- WhatsApp Destek Kartı -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-bottom:20px">
+        <div class="card" style="padding:28px;text-align:center;border:2px solid #25D36622">
+          <div style="font-size:52px;margin-bottom:12px">💬</div>
+          <div style="font-size:18px;font-weight:700;margin-bottom:6px">WhatsApp Destek</div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.6">
+            Lojistik ilanları, üyelik ve teknik konularda<br>7/24 destek alın.
+          </div>
+          <a href="https://wa.me/905015303028?text=Merhaba%2C%20YükleGit%20hakkında%20bilgi%20almak%20istiyorum." target="_blank" rel="noopener"
+             style="display:inline-flex;align-items:center;gap:8px;background:#25D366;color:white;border-radius:10px;padding:12px 24px;text-decoration:none;font-weight:700;font-size:14px;transition:opacity .2s"
+             onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+            <svg width="20" height="20" viewBox="0 0 32 32" fill="white"><path d="M16 2C8.268 2 2 8.268 2 16c0 2.478.675 4.797 1.85 6.787L2 30l7.43-1.826A13.94 13.94 0 0016 30c7.732 0 14-6.268 14-14S23.732 2 16 2zm6.29 19.076c-.344-.172-2.036-1.004-2.352-1.118-.316-.115-.547-.172-.777.172-.23.344-.892 1.118-1.093 1.348-.2.23-.402.258-.747.086-.344-.172-1.454-.536-2.77-1.71-1.023-.913-1.714-2.04-1.915-2.385-.2-.344-.021-.53.15-.702.155-.155.344-.402.516-.603.172-.2.23-.344.344-.573.115-.23.058-.43-.029-.603-.086-.172-.777-1.876-1.064-2.566-.28-.672-.564-.58-.777-.59l-.661-.011c-.23 0-.603.086-.918.43s-1.207 1.176-1.207 2.867 1.236 3.326 1.408 3.555c.172.23 2.432 3.71 5.893 5.205.823.355 1.466.567 1.967.726.826.263 1.579.226 2.173.137.663-.1 2.036-.832 2.323-1.634.287-.803.287-1.49.2-1.634-.086-.143-.315-.23-.66-.402z"/></svg>
+            WhatsApp'tan Yaz
+          </a>
+          <div style="margin-top:14px;font-size:12px;color:var(--muted)">+90 501 530 30 28</div>
+        </div>
+
+        <div class="card" style="padding:28px">
+          <div style="font-size:18px;font-weight:700;margin-bottom:16px">📋 Sık Sorulan Sorular</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <details style="background:var(--bg);border-radius:8px;padding:12px 14px;cursor:pointer">
+              <summary style="font-weight:600;font-size:13px;list-style:none;display:flex;justify-content:space-between;align-items:center">
+                İlanlar ne kadar süre görünür? <span style="color:var(--primary)">+</span>
+              </summary>
+              <p style="margin:10px 0 0;font-size:13px;color:var(--muted);line-height:1.6">İlanlar yayınlandıktan itibaren 1 saat boyunca sistemde görünür kalır.</p>
+            </details>
+            <details style="background:var(--bg);border-radius:8px;padding:12px 14px;cursor:pointer">
+              <summary style="font-weight:600;font-size:13px;list-style:none;display:flex;justify-content:space-between;align-items:center">
+                Hangi gruplardan ilan çekiliyor? <span style="color:var(--primary)">+</span>
+              </summary>
+              <p style="margin:10px 0 0;font-size:13px;color:var(--muted);line-height:1.6">Botun eklendiği WhatsApp lojistik gruplarından otomatik olarak ilanlar çekilmektedir.</p>
+            </details>
+            <details style="background:var(--bg);border-radius:8px;padding:12px 14px;cursor:pointer">
+              <summary style="font-weight:600;font-size:13px;list-style:none;display:flex;justify-content:space-between;align-items:center">
+                İlan vermek için ne yapmalıyım? <span style="color:var(--primary)">+</span>
+              </summary>
+              <p style="margin:10px 0 0;font-size:13px;color:var(--muted);line-height:1.6">"İlan Ver" sayfasından kalkış ve varış noktasını, araç türünü ve iletişim bilgilerinizi girerek ilan oluşturabilirsiniz.</p>
+            </details>
+            <details style="background:var(--bg);border-radius:8px;padding:12px 14px;cursor:pointer">
+              <summary style="font-weight:600;font-size:13px;list-style:none;display:flex;justify-content:space-between;align-items:center">
+                Üyelik ücretli mi? <span style="color:var(--primary)">+</span>
+              </summary>
+              <p style="margin:10px 0 0;font-size:13px;color:var(--muted);line-height:1.6">Şu an için üyelik tamamen ücretsizdir.</p>
+            </details>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hızlı Mesaj Şablonları -->
+      <div class="card" style="padding:24px">
+        <div style="font-size:16px;font-weight:700;margin-bottom:14px">⚡ Hızlı Mesaj Gönder</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <a href="https://wa.me/905015303028?text=Merhaba%2C%20üyelik%20hakkında%20bilgi%20almak%20istiyorum." target="_blank" rel="noopener"
+             style="display:inline-flex;align-items:center;gap:6px;border:1.5px solid #25D36655;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:600;color:#16a34a;text-decoration:none;transition:all .15s;background:#f0fdf4"
+             onmouseover="this.style.background='#dcfce7'" onmouseout="this.style.background='#f0fdf4'">
+            👤 Üyelik bilgisi
+          </a>
+          <a href="https://wa.me/905015303028?text=Merhaba%2C%20ilan%20vermek%20istiyorum%2C%20yardımcı%20olabilir%20misiniz%3F" target="_blank" rel="noopener"
+             style="display:inline-flex;align-items:center;gap:6px;border:1.5px solid #25D36655;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:600;color:#16a34a;text-decoration:none;transition:all .15s;background:#f0fdf4"
+             onmouseover="this.style.background='#dcfce7'" onmouseout="this.style.background='#f0fdf4'">
+            📦 İlan vermek istiyorum
+          </a>
+          <a href="https://wa.me/905015303028?text=Merhaba%2C%20teknik%20bir%20sorun%20yaşıyorum%2C%20yardımcı%20olabilir%20misiniz%3F" target="_blank" rel="noopener"
+             style="display:inline-flex;align-items:center;gap:6px;border:1.5px solid #25D36655;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:600;color:#16a34a;text-decoration:none;transition:all .15s;background:#f0fdf4"
+             onmouseover="this.style.background='#dcfce7'" onmouseout="this.style.background='#f0fdf4'">
+            🔧 Teknik sorun
+          </a>
+          <a href="https://wa.me/905015303028?text=Merhaba%2C%20bir%20şikayet%20iletmek%20istiyorum." target="_blank" rel="noopener"
+             style="display:inline-flex;align-items:center;gap:6px;border:1.5px solid #25D36655;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:600;color:#16a34a;text-decoration:none;transition:all .15s;background:#f0fdf4"
+             onmouseover="this.style.background='#dcfce7'" onmouseout="this.style.background='#f0fdf4'">
+            📣 Şikayet
+          </a>
+          <a href="https://wa.me/905015303028?text=Merhaba%2C%20botunuzu%20grubuma%20eklemek%20istiyorum." target="_blank" rel="noopener"
+             style="display:inline-flex;align-items:center;gap:6px;border:1.5px solid #25D36655;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:600;color:#16a34a;text-decoration:none;transition:all .15s;background:#f0fdf4"
+             onmouseover="this.style.background='#dcfce7'" onmouseout="this.style.background='#f0fdf4'">
+            🤖 Botu grubuma ekle
+          </a>
+        </div>
+      </div>
+    </div>
+
     <!-- QR Modal -->
     <div id="qrModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center">
       <div style="background:var(--surface);border-radius:16px;padding:32px;max-width:380px;width:90%;text-align:center;position:relative">
@@ -783,7 +871,7 @@ function initApp(){
 }
 
 function showPage(page){
-  ['ilanlar','profil','ilanver','kullanicilar','blacklist','hareketler','botlar'].forEach(p=>{
+  ['ilanlar','profil','ilanver','iletisim','kullanicilar','blacklist','hareketler','botlar'].forEach(p=>{
     const el=document.getElementById('page-'+p);if(el)el.style.display=p===page?'block':'none';
     const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);
   });
@@ -793,6 +881,7 @@ function showPage(page){
   if(page==='blacklist')loadBlacklist();
   if(page==='hareketler')loadHareketler();
   if(page==='botlar')loadBotlar();
+  if(page==='iletisim'){ /* statik sayfa, yükleme gerekmez */ }
 }
 
 async function api(url,opts={}){
@@ -1717,5 +1806,20 @@ if(token&&currentUser){initApp();}
       }, 2000);
     }
   </script>
+
+<!-- ── Yüzen WhatsApp Destek Butonu ─────────────── -->
+<a id="waFloat" href="https://wa.me/905015303028?text=Merhaba%2C%20YükleGit%20hakkında%20bilgi%20almak%20istiyorum." target="_blank" rel="noopener"
+   style="position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;align-items:center;gap:10px;
+          background:#25D366;color:white;border-radius:50px;padding:12px 20px 12px 14px;
+          box-shadow:0 4px 20px rgba(37,211,102,.45);text-decoration:none;font-weight:700;
+          font-size:14px;font-family:'Outfit',sans-serif;transition:transform .2s,box-shadow .2s"
+   onmouseover="this.style.transform='scale(1.06)';this.style.boxShadow='0 6px 28px rgba(37,211,102,.6)'"
+   onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 20px rgba(37,211,102,.45)'">
+  <svg width="26" height="26" viewBox="0 0 32 32" fill="white" xmlns="http://www.w3.org/2000/svg">
+    <path d="M16 2C8.268 2 2 8.268 2 16c0 2.478.675 4.797 1.85 6.787L2 30l7.43-1.826A13.94 13.94 0 0016 30c7.732 0 14-6.268 14-14S23.732 2 16 2zm0 25.5a11.44 11.44 0 01-5.836-1.596l-.418-.248-4.413 1.084 1.13-4.3-.272-.44A11.46 11.46 0 014.5 16C4.5 9.596 9.596 4.5 16 4.5S27.5 9.596 27.5 16 22.404 27.5 16 27.5zm6.29-8.424c-.344-.172-2.036-1.004-2.352-1.118-.316-.115-.547-.172-.777.172-.23.344-.892 1.118-1.093 1.348-.2.23-.402.258-.747.086-.344-.172-1.454-.536-2.77-1.71-1.023-.913-1.714-2.04-1.915-2.385-.2-.344-.021-.53.15-.702.155-.155.344-.402.516-.603.172-.2.23-.344.344-.573.115-.23.058-.43-.029-.603-.086-.172-.777-1.876-1.064-2.566-.28-.672-.564-.58-.777-.59l-.661-.011c-.23 0-.603.086-.918.43s-1.207 1.176-1.207 2.867 1.236 3.326 1.408 3.555c.172.23 2.432 3.71 5.893 5.205.823.355 1.466.567 1.967.726.826.263 1.579.226 2.173.137.663-.1 2.036-.832 2.323-1.634.287-.803.287-1.49.2-1.634-.086-.143-.315-.23-.66-.402z"/>
+  </svg>
+  WhatsApp Destek
+</a>
+
 </body>
 </html>
