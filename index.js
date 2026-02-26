@@ -12,7 +12,8 @@ const qrcode          = require('qrcode-terminal');
 const CONFIG = {
   TTL_MS: 1 * 60 * 60 * 1000, // 1 saat
 
-  PHONE_REGEX: /(\+?\d[\d\s\-().]{7,}\d)/g,
+  // Türkiye telefon: 05XXXXXXXXX (11 hane) veya +905XXXXXXXXX (13 hane)
+  PHONE_REGEX: /(?<!\d)((?:\+90|0)5\d{9})(?!\d)/g,
 
   // Kara liste — normalize() sonrası karşılaştırılır
   // Büyük/küçük harf, Türkçe karakter, kesme işareti fark etmez
@@ -597,20 +598,24 @@ function botOlustur(clientId, isim) {
         const timestamp = msg.timestamp * 1000;
         const hash      = contentHash(body);
 
-        // Metinde telefon numarası var mı kontrol et
-        const metiндеТel = CONFIG.PHONE_REGEX.test(body);
+        // Metinde Türkiye telefon numarası var mı kontrol et
+        CONFIG.PHONE_REGEX.lastIndex = 0;
+        const metindeTel = CONFIG.PHONE_REGEX.test(body);
         CONFIG.PHONE_REGEX.lastIndex = 0;
 
-        // Gönderenin numarasını al (grup mesajlarında author, özel mesajlarda from)
+        // Gönderenin numarasını al — WhatsApp formatı: 905XXXXXXXXX@c.us
         let senderPhone = '';
         try {
-          const rawNum = (msg.author || msg.from || '').replace('@c.us', '').replace('@g.us', '').replace(/\D/g, '');
-          if (rawNum.length >= 10) senderPhone = rawNum;
+          const raw = (msg.author || msg.from || '').split('@')[0].replace(/\D/g, '');
+          // 905XXXXXXXXX → +905XXXXXXXXX (13 hane)
+          if (/^905\d{9}$/.test(raw)) {
+            senderPhone = '+' + raw;
+          }
         } catch {}
 
-        // Metinde tel yoksa gönderenin numarasını ilana ekle
+        // Metinde Türkiye numarası yoksa gönderenin numarasını ekle
         let finalText = body;
-        if (!metiндеТel && senderPhone) {
+        if (!metindeTel && senderPhone) {
           finalText = body.trimEnd() + '\n📞 ' + senderPhone;
           console.log(`📞 [${clientId}] Numara eklendi: ${senderPhone}`);
         }

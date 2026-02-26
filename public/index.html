@@ -284,8 +284,8 @@ tr:hover td{background:#f8faff}
 .actionBadge.search{background:#eff6ff;color:#1a5fdb}
 
 /* Tel linki */
-.telLink{color:var(--accent);font-weight:700;text-decoration:none;white-space:nowrap}
-.telLink:hover{text-decoration:underline}
+.telLink{color:#16a34a;font-weight:700;text-decoration:none;white-space:nowrap;background:#f0fdf4;padding:1px 6px;border-radius:4px;border:1px solid #bbf7d0}
+.telLink:hover{background:#dcfce7;text-decoration:underline}
 
 /* İlan oluştur */
 .ilanForm{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);margin-bottom:20px}
@@ -1027,7 +1027,7 @@ function renderSatirlar(text, matchedTerms, ilceler1, ilceler2){
   const nList2 = (ilceler2||[]).map(norm).filter(Boolean);
   const normTerms = matchedTerms.map(norm).filter(Boolean);
 
-  const telRegex = /(\+?[\d][\d\s\-().]{7,}[\d])/;
+  const telRegex = /(?<!\d)((?:\+90|0)5\d{9})(?!\d)/;
   const aramaIkiYon = nList1.length > 0 && nList2.length > 0;
 
   const satirlar = text.split(/\n/);
@@ -1079,11 +1079,10 @@ function hlText(text, terms){
       .replace(/c/g,'[cçC]');
   }
   let result = esc(text);
-  // Önce telefon numaralarını tıklanabilir yap
-  result = result.replace(/(\+?[\d][\d\s\-().]{7,}[\d])/g,(m)=>{
-    const clean=m.replace(/[\s\-().]/g,'');
-    if(clean.length<10||clean.length>15)return m;
-    return '<a href="tel:'+clean+'" class="telLink">'+m+'</a>';
+  // Türkiye telefon numaralarını tıklanabilir yap: 05XXXXXXXXX veya +905XXXXXXXXX
+  result = result.replace(/(?<!\d)((?:\+90|0)5\d{9})(?!\d)/g, (m) => {
+    const intl = m.startsWith('+') ? m : '+9' + m;
+    return '<a href="tel:' + intl + '" class="telLink">' + m + '</a>';
   });
   // Şehir highlight — ama <a> tag'lerinin içini bozma
   // Tag'leri placeholder'a al, sonra geri koy
