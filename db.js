@@ -124,6 +124,7 @@ function ilanEkle({ hash, text, cities, chatName, chatId, senderPhone, timestamp
 
 /**
  * İlan ara — parametrik sorgular, injection-safe
+ * İlçe listesini düzgün şekilde arar, il/ilçe sıralamasını doğru kontrol eder
  */
 function ilanAra(sehir1, sehir2, ilceler1, ilceler2) {
   const since = Date.now() - 24 * 60 * 60 * 1000;
@@ -147,38 +148,60 @@ function ilanAra(sehir1, sehir2, ilceler1, ilceler2) {
   const list1 = ilceler1 && ilceler1.length ? ilceler1 : [sehir1];
   const list2 = ilceler2 && ilceler2.length ? ilceler2 : (sehir2 ? [sehir2] : []);
 
-  // SQL: cities JSON'ında list1'deki herhangi bir şehir geçiyor mu?
-  const placeholders1 = list1.map(() => '?').join(' OR cities LIKE ');
-  const sql = `SELECT * FROM ilanlar WHERE timestamp > ? AND (cities LIKE ${placeholders1})`;
-  const params = [since, ...list1.map(s => `%"${s.toLowerCase()}"%`)];
-  let rows = db.prepare(sql).all(...params);
+  // Normalize et
+  const nList1 = list1.map(s => normStr(s)).filter(Boolean);
+  const nList2 = list2.map(s => normStr(s)).filter(Boolean);
 
-  if (sehir2 && list2.length) {
-    const nList1 = list1.map(s => normStr(s)).filter(Boolean);
-    const nList2 = list2.map(s => normStr(s)).filter(Boolean);
+  // SQL: tüm ilanları al (timestamp filtresiyle), sonra JavaScript'te kontrol et
+  const sql = `SELECT * FROM ilanlar WHERE timestamp > ? ORDER BY timestamp DESC`;
+  let rows = db.prepare(sql).all(since);
 
+  // 1. Adım: list1'den en az biri ilanın metninde geçiyor mu?
+  rows = rows.filter(r => {
+    const normText = normStr(r.text);
+    return nList1.some(city => normText.includes(city));
+  });
+
+  // 2. Adım: Eğer varış belirtilmişse, list2 de ilanın metninde geçmeli
+  if (sehir2 && list2.length > 0) {
     rows = rows.filter(r => {
-      // Satır bazlı: aynı satırda list1'den biri solda, list2'den biri sağda mı?
+      const normText = normStr(r.text);
+      return nList2.some(city => normText.includes(city));
+    });
+
+    // 3. Adım: Aynı satırda list1'den biri SONRA list2'den biri geç mi?
+    // Bu sıralama önemli: başlangıç → varış
+    rows = rows.filter(r => {
       const satirlar = r.text.split(/[\n\r]+/).map(s => normStr(s));
       for (const satir of satirlar) {
-        // list1'den ilk eşleşen pozisyonu bul (en küçük)
-        let p1 = Infinity;
+        // list1'den ilk eşleşen pozisyonu bul
+        let p1 = -1;
+        let firstCity1 = null;
         for (const n of nList1) {
           const idx = satir.indexOf(n);
-          if (idx !== -1 && idx < p1) p1 = idx;
+          if (idx !== -1 && (p1 === -1 || idx < p1)) {
+            p1 = idx;
+            firstCity1 = n;
+          }
         }
-        if (p1 === Infinity) continue;
+        if (p1 === -1) continue;
 
-        // list2'den herhangi biri p1'den sonra mı?
+        // list2'den ilk eşleşen pozisyonu bul
+        let p2 = -1;
+        let firstCity2 = null;
         for (const n of nList2) {
-          const p2 = satir.indexOf(n);
-          if (p2 !== -1 && p2 > p1) return true;
+          const idx = satir.indexOf(n);
+          if (idx !== -1 && (p2 === -1 || idx < p2)) {
+            p2 = idx;
+            firstCity2 = n;
+          }
         }
+
+        // list2'den biri p1'den sonra mı?
+        if (p2 !== -1 && p2 > p1) return true;
       }
       return false;
     });
-  } else if (!sehir2) {
-    // Tek şehir araması: sadece cities'de var mı yeterli (SQL zaten filtredi)
   }
 
   return rows;

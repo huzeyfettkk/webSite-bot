@@ -413,6 +413,7 @@ function sehirBul(input) {
 app.get('/api/ilanlar', authMiddleware, (req, res) => {
   const { sehir1, sehir2 } = req.query;
   let matchedTerms = [];
+  let ilceler1 = [], ilceler2 = [];
 
   if (sehir1) {
     // Şehri bul ve normalize et
@@ -425,9 +426,10 @@ app.get('/api/ilanlar', authMiddleware, (req, res) => {
     logEkle({ userId: req.user.id, action: 'search', detail: bulunan2 ? `${bulunan1} → ${bulunan2}` : bulunan1, ipAddress: getIP(req) });
 
     // matchedTerms: il + tüm ilçeleri highlight için
-    const ilceler1 = getIlVeIlceleri(bulunan1);
-    const ilceler2 = bulunan2 ? getIlVeIlceleri(bulunan2) : [];
+    ilceler1 = getIlVeIlceleri(bulunan1);
+    ilceler2 = bulunan2 ? getIlVeIlceleri(bulunan2) : [];
     matchedTerms = [...ilceler1, ...ilceler2];
+
     // SQLite'tan sonuçları al — il + ilçe listesiyle genişletilmiş arama
     const dbRows = ilanAra(bulunan1, bulunan2 || null, ilceler1, ilceler2);
     const dbIlanlar = dbRows.map(r => ({
@@ -455,15 +457,72 @@ app.get('/api/ilanlar', authMiddleware, (req, res) => {
       if (!hashMap.has(key)) hashMap.set(key, ilan);
     }
 
-    const ilanlar = [...hashMap.values()]
-      .sort((a, b) => b.timestamp - a.timestamp);
+    // ── İlan metninde il/ilçe sıralamasını tespit et ──
+    const ilanlarWithSeq = [...hashMap.values()].map(ilan => {
+      const normStr = s => normS(s);
+      const normText = normStr(ilan.text);
+      
+      const nList1 = ilceler1.map(s => normStr(s)).filter(Boolean);
+      const nList2 = ilceler2.map(s => normStr(s)).filter(Boolean);
+
+      // İlk geçen il/ilçe (list1'den)
+      let ilanNereden = null;
+      let ilanNedenidenIdx = Infinity;
+      for (const n of nList1) {
+        const idx = normText.indexOf(n);
+        if (idx !== -1 && idx < ilanNedenidenIdx) {
+          ilanNedenidenIdx = idx;
+          ilanNereden = n;
+        }
+      }
+
+      // İkinci geçen il/ilçe (list2'den)
+      let ilanNereye = null;
+      let ilanNereyeIdx = Infinity;
+      if (nList2.length > 0) {
+        for (const n of nList2) {
+          const idx = normText.indexOf(n);
+          if (idx !== -1 && idx > ilanNedenidenIdx && idx < ilanNereyeIdx) {
+            ilanNereyeIdx = idx;
+            ilanNereye = n;
+          }
+        }
+      }
+
+      // Eğer list2 yoksa veya bulunamadıysa, nList1'den ikinci geçeni ara
+      if (!ilanNereye && nList1.length > 0) {
+        let secondIdx = Infinity;
+        for (const n of nList1) {
+          // İlki zaten bulunmuş, ona sonra geçeni ara
+          const idx = normText.indexOf(n, ilanNedenidenIdx + 1);
+          if (idx !== -1 && idx < secondIdx) {
+            secondIdx = idx;
+            ilanNereye = n;
+          }
+        }
+      }
+
+      return {
+        ...ilan,
+        ilanNereden: ilanNereden || (ilceler1.length > 0 ? ilceler1[0] : null),
+        ilanNereye: ilanNereye || (ilceler2.length > 0 ? ilceler2[0] : (ilceler1.length > 1 ? ilceler1[1] : null))
+      };
+    });
+
+    // En yeni → en eski sırasına göre sor
+    const ilanlar = ilanlarWithSeq.sort((a, b) => b.timestamp - a.timestamp);
 
     return res.json({ ilanlar, matchedTerms, ilceler1, ilceler2 });
   }
 
-  // Arama yoksa tüm ilanlar
+  // Arama yoksa tüm ilanlar (en yeniler önce)
   const rows = ilanAra(null, null);
-  const ilanlar = rows.map(r => ({ ...r, cities: (() => { try { return JSON.parse(r.cities); } catch { return []; } })() }));
+  const ilanlar = rows.map(r => ({ 
+    ...r, 
+    cities: (() => { try { return JSON.parse(r.cities); } catch { return []; } })(),
+    ilanNereden: null,
+    ilanNereye: null
+  }));
   res.json({ ilanlar, matchedTerms });
 });
 
