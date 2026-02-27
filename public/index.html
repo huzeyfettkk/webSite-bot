@@ -1097,7 +1097,7 @@ function renderSatirlar(text, matchedTerms, ilceler1, ilceler2){
   const nList2 = (ilceler2||[]).map(norm).filter(Boolean);
   const normTerms = matchedTerms.map(norm).filter(Boolean);
 
-  const telRegex = /(?<!\d)((?:\+90|0)5\d{9})(?!\d)/;
+  const telRegex = /(?<!\d)((?:\+\s*90\s*|0\s*)\(?\s*[2-9]\d{2}\s*\)?(?:[ .\-]?\d){7})(?!\d)/;
   const aramaIkiYon = nList1.length > 0 && nList2.length > 0;
 
   const satirlar = text.split(/\n/);
@@ -1152,7 +1152,7 @@ function hlText(text, terms){
   //   *0507 448 43 40*   → WhatsApp kalın (yıldız) formatı
   //   0532-123-45-67     → tireli
   //   +90 532 123 45 67  → ülke kodu + boşluklu
-  const TEL_RE = /(?<!\d)[*_~]?((?:\+\s*90|0)\s*5(?:[ .\-]?\d){9})[*_~]?(?!\d)/g;
+  const TEL_RE = /(?<!\d)[*_~]?((?:\+\s*90\s*|0\s*)\(?\s*[2-9]\d{2}\s*\)?(?:[ .\-]?\d){7})[*_~]?(?!\d)/g;
   const parcalar = []; // {type:'text'|'tel', val}
   let son = 0, m;
   TEL_RE.lastIndex = 0;
@@ -1234,8 +1234,12 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 
 async function ilanPaylas(btn) {
   const text = btn.getAttribute('data-text') || '';
-  const chat = btn.getAttribute('data-chat') || '';
-  const paylasMetin = (chat ? '📦 ' + chat + '\n' : '') + text + '\n\n🌐 yuklegit.tr';
+  const sep = '------------------------------------';
+  const paylasMetin =
+    '📦 YükleGit - Yeni İlan Bildirimi\n' + sep + '\n' +
+    text + '\n' + sep + '\n' +
+    '🚀 Bunun gibi onlarca güncel ilanı anlık takip etmek ve ücretsiz ilan vermek için sitemize göz atın:\n' +
+    '👉 ' + window.location.origin;
 
   // Web Share API varsa kullan (mobil)
   if (navigator.share) {

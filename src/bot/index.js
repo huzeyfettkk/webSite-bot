@@ -30,8 +30,8 @@ if (!fs.existsSync(SESSIONS_DIR)) {
 const CONFIG = {
   TTL_MS: 1 * 60 * 60 * 1000, // 1 saat
 
-  // Türkiye telefon: 05XXXXXXXXX (11 hane) veya +905XXXXXXXXX (13 hane)
-  PHONE_REGEX: /(?<!\d)((?:\+90|0)5\d{9})(?!\d)/g,
+  // Türkiye telefon: 05XXXXXXXXX, 0(5XX)XXXXXXX, 0(4XX) XXX X XXX (sabit hat dahil)
+  PHONE_REGEX: /(?<!\d)((?:\+\s*90\s*|0\s*)\(?\s*[2-9]\d{2}\s*\)?(?:[ .\-]?\d){7})(?!\d)/g,
 
   // Sadece bu numaradan gelen özel mesajlara (DM) cevap ver.
   // Diğer tüm DM'ler sessizce görmezden gelinir.
