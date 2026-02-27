@@ -491,10 +491,21 @@ function puppeteerOpts() {
 }
 
 function temizleLock(clientId) {
-  const dir = path.join(__dirname, '.wwebjs_auth', 'session-' + clientId);
-  ['SingletonLock','SingletonCookie','SingletonSocket'].forEach(f => {
-    try { const p = path.join(dir, f); if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
-  });
+  // LocalAuth, Chrome profilini {dataPath}/session-{clientId} altında saklar.
+  // Lock dosyaları o dizinde olur — eski yol (.wwebjs_auth) artık kullanılmıyor.
+  const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
+  const dirs = [
+    path.join(SESSIONS_DIR, `bot_${clientId}`, `session-${clientId}`), // ← doğru yol
+    path.join(__dirname, '.wwebjs_auth', 'session-' + clientId),        // ← eski/alternatif
+  ];
+  for (const dir of dirs) {
+    for (const f of lockFiles) {
+      try {
+        const p = path.join(dir, f);
+        if (fs.existsSync(p)) { fs.unlinkSync(p); logger.info('LOCK_CLEAN', `Lock silindi: ${p}`, { clientId }); }
+      } catch {}
+    }
+  }
 }
 
 // QR event'i dinleyenlere gönder (frontend /qr-image çeker)
@@ -976,8 +987,29 @@ function botOlustur(clientId, isim) {
     }, bekleme);
   });
 
-  client.initialize().catch(e => {
+  client.initialize().catch(async e => {
     logger.error('BOT_INIT', 'Client initialize basarisiz', e, { clientId });
+
+    // ── "Browser already running" → önceki Chrome process'i kapanmamış ──
+    // Lock dosyalarını sil ve botu temizden yeniden başlat
+    if (String(e.message).includes('already running')) {
+      logger.warn('BOT_INIT', 'Eski Chrome process lock tespit edildi, temizleniyor...', { clientId });
+      temizleLock(clientId);
+
+      try { await bot.client.destroy(); } catch {}
+      botManager.delete(clientId);
+
+      // Kısa bekleme sonrası temiz restart
+      setTimeout(async () => {
+        const dbBot = require('./db').botBul(clientId);
+        if (dbBot) {
+          logger.info('BOT_INIT_RETRY', 'Lock temizlendi, bot yeniden başlatılıyor', { clientId });
+          botOlustur(clientId, dbBot.isim);
+        }
+      }, 4_000);
+      return;
+    }
+
     bot.durum = 'hata';
     botGuncelle(clientId, { durum: 'hata' });
   });
