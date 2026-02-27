@@ -503,7 +503,7 @@ function botOlustur(clientId, isim) {
     puppeteer: puppeteerOpts(),
   });
 
-  const bot = { client, clientId, isim, durum: 'baslatiliyor', qrData: null };
+  const bot = { client, clientId, isim, durum: 'baslatiliyor', qrData: null, _watchdog: null };
   botManager.set(clientId, bot);
 
   client.on('qr', qr => {
@@ -533,6 +533,51 @@ function botOlustur(clientId, isim) {
       durumGonder(clientId, 'hazir', { telefon: tel });
     } catch { botGuncelle(clientId, { durum: 'hazir' }); }
     console.log(`🤖 [${clientId}] Hazır!`);
+
+    // ── Puppeteer tarayıcı çöküşü yakalama ──────────────────────────
+    // Puppeteer kendi çökerse 'disconnected' eventi tetiklenmez — bunu ayrıca yakala
+    try {
+      client.pupBrowser.once('disconnected', () => {
+        if (!botManager.has(clientId) || bot.durum !== 'hazir') return;
+        console.warn(`💥 [${clientId}] Puppeteer çöktü — 15s sonra yeniden başlatılıyor...`);
+        bot.durum = 'baglanti_kesildi';
+        botGuncelle(clientId, { durum: 'baglanti_kesildi' });
+        durumGonder(clientId, 'baglanti_kesildi');
+        if (bot._watchdog) { clearInterval(bot._watchdog); bot._watchdog = null; }
+        setTimeout(async () => {
+          if (!botManager.has(clientId)) return;
+          try { await bot.client.destroy(); } catch {}
+          botManager.delete(clientId);
+          const dbBot = require('./db').botBul(clientId);
+          if (dbBot) botOlustur(clientId, dbBot.isim);
+        }, 15_000);
+      });
+    } catch {}
+
+    // ── Heartbeat: Her 2 dakikada WhatsApp bağlantısını kontrol et ──
+    // Silent disconnect (sessiz kopma) durumunu yakalar
+    if (bot._watchdog) clearInterval(bot._watchdog);
+    bot._watchdog = setInterval(async () => {
+      if (!botManager.has(clientId)) { clearInterval(bot._watchdog); return; }
+      if (bot.durum !== 'hazir') return;
+      try {
+        const state = await client.getState();
+        if (state !== 'CONNECTED') throw new Error(`durum=${state}`);
+      } catch (e) {
+        console.warn(`💓 [${clientId}] Heartbeat başarısız (${e.message}) — yeniden bağlanılıyor...`);
+        clearInterval(bot._watchdog); bot._watchdog = null;
+        bot.durum = 'baglanti_kesildi';
+        botGuncelle(clientId, { durum: 'baglanti_kesildi' });
+        durumGonder(clientId, 'baglanti_kesildi');
+        setTimeout(async () => {
+          if (!botManager.has(clientId)) return;
+          try { await bot.client.destroy(); } catch {}
+          botManager.delete(clientId);
+          const dbBot = require('./db').botBul(clientId);
+          if (dbBot) botOlustur(clientId, dbBot.isim);
+        }, 10_000);
+      }
+    }, 2 * 60 * 1000);
   });
 
   client.on('message_create', async (msg) => {
@@ -667,26 +712,20 @@ function botOlustur(clientId, isim) {
     durumGonder(clientId, 'baglanti_kesildi');
     console.warn(`⚠️  [${clientId}] Bağlantı kesildi: ${reason}`);
     temizleLock(clientId);
+    if (bot._watchdog) { clearInterval(bot._watchdog); bot._watchdog = null; }
 
-    // QR taranmadıysa otomatik yeniden başlatma — admin panelinden yapılsın
-    // Gerçek bağlantı kopması ise (LOGOUT, NAVIGATION vb.) 30s sonra yeniden başlat
-    const qrSebep = String(reason).toLowerCase().includes('qr');
-    if (qrSebep) {
-      console.log(`ℹ️  [${clientId}] QR taranmadı — admin panelinden "QR Göster" ile yeniden deneyin`);
-      return;
-    }
-
+    // Her durumda yeniden bağlan.
+    // Oturum (.wwebjs_auth) geçerliyse → QR gerekmez, otomatik bağlanır.
+    // Oturum sona erdiyse (LOGOUT) → QR gösterir, admin panelinden taranır.
+    const bekleme = String(reason).toUpperCase() === 'LOGOUT' ? 5_000 : 20_000;
+    console.log(`🔄 [${clientId}] ${bekleme / 1000}s sonra yeniden bağlanılıyor... (sebep: ${reason})`);
     setTimeout(async () => {
       if (!botManager.has(clientId)) return;
-      console.log(`🔄 [${clientId}] Yeniden bağlanılıyor...`);
-      try {
-        await bot.client.destroy();
-      } catch {}
-      // Yeni client oluştur
+      try { await bot.client.destroy(); } catch {}
       botManager.delete(clientId);
       const dbBot = require('./db').botBul(clientId);
       if (dbBot) botOlustur(clientId, dbBot.isim);
-    }, 30_000);
+    }, bekleme);
   });
 
   client.initialize().catch(e => {
@@ -701,6 +740,7 @@ function botOlustur(clientId, isim) {
 async function botDurdur(clientId) {
   const bot = botManager.get(clientId);
   if (!bot) return;
+  if (bot._watchdog) { clearInterval(bot._watchdog); bot._watchdog = null; }
   try { await bot.client.destroy(); } catch {}
   temizleLock(clientId);
   botManager.delete(clientId);
