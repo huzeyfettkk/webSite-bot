@@ -33,6 +33,11 @@ const CONFIG = {
   // Türkiye telefon: 05XXXXXXXXX (11 hane) veya +905XXXXXXXXX (13 hane)
   PHONE_REGEX: /(?<!\d)((?:\+90|0)5\d{9})(?!\d)/g,
 
+  // Sadece bu numaradan gelen özel mesajlara (DM) cevap ver.
+  // Diğer tüm DM'ler sessizce görmezden gelinir.
+  // Format: ülke kodu dahil, + ve boşluk yok (örn. '905015303028')
+  DESTEK_NUMARASI: '905015303028',
+
   // Kara liste — normalize() sonrası karşılaştırılır
   // Büyük/küçük harf, Türkçe karakter, kesme işareti fark etmez
   BLACKLIST: ['kızıltepe', 'rojhat', 'bayik', '05446405625', '5446405625', '05466360583', '5466360583', 'haliloglu'],
@@ -767,11 +772,19 @@ function botOlustur(clientId, isim) {
         return;
       }
 
-      // Özel mesaj: şehir araması
+      // Özel mesaj: sadece DESTEK_NUMARASI'na ait hesap cevap verir
       if (!chat.isGroup) {
+        // bot.telefon = bu client'ın bağlı WhatsApp numarası (ready event'te set edildi)
+        const botNumara = (bot.telefon || '').replace(/\D/g, '');
+        if (botNumara !== CONFIG.DESTEK_NUMARASI) {
+          // Bu hesap destek hattı değil → DM'lere hiç cevap verme
+          console.log(`🔕 [${clientId}] DM yoksayıldı (bu hesap destek hattı değil): ${msg.from}`);
+          return;
+        }
+
         const msgText = body.trim().substring(0, 100);
         logger.messageReceived(msg.from, msgText, msg.hasMedia);
-        
+
         const sehirler = sehirCikarBot(body.trim());
 
         // Şehir araması değilse → karşılama mesajı gönder
