@@ -4,10 +4,14 @@ require('dotenv').config();
  * whatsapp-web.js kullanarak yazılmıştır.
  */
 
+const logger = require('./bot-logger');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const { startServer } = require('./server');
 const { ilanEkle }    = require('./db');
 const qrcode          = require('qrcode-terminal');
+
+// Bot başlatma logu
+logger.botStart();
 
 const CONFIG = {
   TTL_MS: 1 * 60 * 60 * 1000, // 1 saat
@@ -493,8 +497,12 @@ function durumGonder(clientId, tip, extra = {}) {
 }
 
 function botOlustur(clientId, isim) {
-  if (botManager.has(clientId)) return botManager.get(clientId);
+  if (botManager.has(clientId)) {
+    logger.warn('BOT_CREATE', `Bot zaten çalışıyor`, { clientId, isim });
+    return botManager.get(clientId);
+  }
 
+  logger.info('BOT_CREATE', `Bot oluşturuluyor: "${isim}"`, { clientId });
   temizleLock(clientId);
 
   const client = new Client({
@@ -510,6 +518,7 @@ function botOlustur(clientId, isim) {
     bot.durum  = 'qr_bekleniyor';
     bot.qrData = qr;
     botGuncelle(clientId, { durum: 'qr_bekleniyor' });
+    logger.info('WHATSAPP_QR', `QR kod oluşturuldu, taranması bekleniyor`, { clientId, qrLength: qr.length });
     console.log(`📱 [${clientId}] QR hazır`);
     // SSE'ye qr_ready eventi gönder (frontend /qr-image endpoint'inden çeker)
     qrGonder(clientId, 'yeni');
@@ -520,6 +529,7 @@ function botOlustur(clientId, isim) {
     bot.qrData = null;
     botGuncelle(clientId, { durum: 'dogrulandi' });
     durumGonder(clientId, 'dogrulandi');
+    logger.success('WHATSAPP_AUTH', `WhatsApp başarıyla doğrulandı`, { clientId });
     console.log(`✅ [${clientId}] Doğrulandı`);
   });
 
@@ -531,7 +541,11 @@ function botOlustur(clientId, isim) {
       botGuncelle(clientId, { durum: 'hazir', telefon: tel });
       bot.telefon = tel;
       durumGonder(clientId, 'hazir', { telefon: tel });
-    } catch { botGuncelle(clientId, { durum: 'hazir' }); }
+      logger.success('WHATSAPP_READY', `Bot hazır ve deneyime girdi`, { clientId, telefon: tel });
+    } catch (err) {
+      logger.error('WHATSAPP_READY', `Bot hazır fakat bilgi alınamadı`, err, { clientId });
+      botGuncelle(clientId, { durum: 'hazir' });
+    }
     console.log(`🤖 [${clientId}] Hazır!`);
 
     // ── Puppeteer tarayıcı çöküşü yakalama ──────────────────────────
@@ -564,6 +578,7 @@ function botOlustur(clientId, isim) {
         const state = await client.getState();
         if (state !== 'CONNECTED') throw new Error(`durum=${state}`);
       } catch (e) {
+        logger.error('HEARTBEAT', `Kalp atışı başarısız, bağlantı yeniden kurulacak`, e, { clientId });
         console.warn(`💓 [${clientId}] Heartbeat başarısız (${e.message}) — yeniden bağlanılıyor...`);
         clearInterval(bot._watchdog); bot._watchdog = null;
         bot.durum = 'baglanti_kesildi';
@@ -602,18 +617,34 @@ function botOlustur(clientId, isim) {
 
       if (isKanal) {
         try {
+          logger.info('CHANNEL_MESSAGE', `Kanal mesajı alındı`, { channel: chat.name || msg.from, text: body.slice(0, 50) });
           console.log(`📡 [${clientId}] KANAL MESAJI: ${chat.name || msg.from}`);
+          
           if (isIlan(body)) {
-            const cities    = extractCities(body);
-            const linePairs = extractLinePairs(body);
-            const timestamp = msg.timestamp * 1000;
-            const hash      = contentHash(body);
-            const kanalAdi  = chat.name || msg.from || 'Kanal';
-            store.add(msg.from + '_' + msg.id.id, { text: body, cities, linePairs, chatName: kanalAdi, chatId: msg.from, senderName: kanalAdi, timestamp });
-            ilanEkle({ hash: String(hash), text: body, cities, chatName: kanalAdi, chatId: msg.from, senderPhone: '', timestamp });
-            console.log(`💾 [${clientId}] 📡 Kanal: ${kanalAdi} | ${cities.join(', ')}`);
+            try {
+              const cities    = extractCities(body);
+              const linePairs = extractLinePairs(body);
+              const timestamp = msg.timestamp * 1000;
+              const hash      = contentHash(body);
+              const kanalAdi  = chat.name || msg.from || 'Kanal';
+              store.add(msg.from + '_' + msg.id.id, { text: body, cities, linePairs, chatName: kanalAdi, chatId: msg.from, senderName: kanalAdi, timestamp });
+              
+              try {
+                ilanEkle({ hash: String(hash), text: body, cities, chatName: kanalAdi, chatId: msg.from, senderPhone: '', timestamp });
+                logger.success('ILAN_SAVE', `İlan başarıyla kaydedildi`, { channel: kanalAdi, cities: cities.join(', '), textLength: body.length });
+              } catch (dbErr) {
+                logger.error('ILAN_SAVE', `İlan veritabanına kaydedilemedi`, dbErr, { channel: kanalAdi });
+              }
+              
+              console.log(`💾 [${clientId}] 📡 Kanal: ${kanalAdi} | ${cities.join(', ')}`);
+            } catch (parseErr) {
+              logger.error('ILAN_PARSE', `İlan parse/işlem hatası`, parseErr, { channel: chat.name });
+            }
+          } else {
+            logger.debug('CHANNEL_MESSAGE', `Mesaj ilan değil (kara liste veya telefon/şehir yok)`, { channel: chat.name || msg.from });
           }
         } catch (e) {
+          logger.error('CHANNEL_PROCESS', `Kanal mesajı işlenirken genel hata`, e, { channel: chat.name });
           console.warn(`⚠️ [${clientId}] Kanal mesajı işlenemedi (önemsiz):`, e.message);
         }
         return;
@@ -621,10 +652,15 @@ function botOlustur(clientId, isim) {
 
       // Özel mesaj: şehir araması
       if (!chat.isGroup) {
+        const msgText = body.trim().substring(0, 100);
+        logger.messageReceived(msg.from, msgText, msg.hasMedia);
+        
         const sehirler = sehirCikarBot(body.trim());
 
         // Şehir araması değilse → karşılama mesajı gönder
         if (!sehirler.length) {
+          logger.warn('CITY_EXTRACTION', `Mesajda şehir bulunamadı`, { from: msg.from, text: msgText });
+          
           const karsilama =
             '👋 *Merhaba! YükleGit Destek Hattına hoş geldiniz.*\n\n' +
             '🚛 *Ne yapabilirim?*\n' +
@@ -634,17 +670,39 @@ function botOlustur(clientId, isim) {
             'Sadece şehir adını veya "şehir1 şehir2" şeklinde yazın.\n\n' +
             '🌐 *Web paneli:* https://yuklegit.tr\n\n' +
             '_Teknik destek için mesajınızı bırakın, en kısa sürede dönüş yapılacaktır._';
-          await msg.reply(karsilama);
+          
+          try {
+            await msg.reply(karsilama);
+            logger.messageSent(msg.from, 1, true);
+          } catch (err) {
+            logger.error('MESSAGE_SEND', 'Karşılama mesajı gönderilemedi', err, { from: msg.from });
+          }
           return;
         }
+        
         const [city1, city2] = sehirler;
-        const results = store.search(city1, city2 || null);
-        const baslik = city2 ? `🔍 *${city1.toUpperCase()} → ${city2.toUpperCase()}*`
-                              : `🔍 *${city1.toUpperCase()}*`;
-        if (!results.length) {
-          await msg.reply(baslik + '\n❌ Uygun ilan bulunamadı.\n_(Son 1 saat içindeki ilanlar gösterilir)_');
-        } else {
-          await msg.reply(baslik + '\n📦 ' + results.length + ' ilan\n' + '─'.repeat(28) + '\n\n' + formatResults(results, sehirler));
+        logger.cityCheck(city1, true, city1);
+        if (city2) logger.cityCheck(city2, true, city2);
+        
+        try {
+          const startTime = Date.now();
+          const results = store.search(city1, city2 || null);
+          const duration = Date.now() - startTime;
+          logger.ilanSearch(city1, city2 || '-', results.length, duration);
+          
+          const baslik = city2 ? `🔍 *${city1.toUpperCase()} → ${city2.toUpperCase()}*`
+                                : `🔍 *${city1.toUpperCase()}*`;
+          if (!results.length) {
+            logger.warn('SEARCH_RESULT', `Sonuç yok`, { city1, city2, resultCount: 0 });
+            await msg.reply(baslik + '\n❌ Uygun ilan bulunamadı.\n_(Son 1 saat içindeki ilanlar gösterilir)_');
+          } else {
+            logger.success('SEARCH_RESULT', `Aramalar başarılı`, { city1, city2, resultCount: results.length });
+            await msg.reply(baslik + '\n📦 ' + results.length + ' ilan\n' + '─'.repeat(28) + '\n\n' + formatResults(results, sehirler));
+            logger.messageSent(msg.from, results.length, true);
+          }
+        } catch (err) {
+          logger.error('SEARCH_PROCESS', `Arama işleminde hata`, err, { from: msg.from, city1, city2 });
+          await msg.reply('❌ Arama sırasında hata oluştu. Lütfen tekrar deneyiniz.');
         }
         return;
       }
@@ -788,41 +846,86 @@ async function samsunBildirimiGonder(senderClient, ilan) {
 
 // ── Başlangıç: DB'deki tüm botları başlat ──────
 function mevcutBotlariBaslat() {
+  logger.info('STARTUP', 'Kayıtlı botlar yükleniyor...', {});
+  
   const dbBotlar = tumBotlar();
   if (dbBotlar.length === 0) {
+    logger.warn('STARTUP', 'Kayıtlı bot bulunamadı', { count: 0 });
+    
     // Geriye dönük uyumluluk: eski tek bot varsa otomatik ekle
     const eskiSessionVar = fs.existsSync(path.join(__dirname, '.wwebjs_auth', 'session-lojistik-bot'));
     if (eskiSessionVar) {
+      logger.info('STARTUP', 'Eski oturum bulundu, otomatik ekleniyor', { clientId: 'lojistik-bot' });
       botEkle({ isim: 'Ana Bot', clientId: 'lojistik-bot' });
       botOlustur('lojistik-bot', 'Ana Bot');
       console.log('🤖 Eski oturum bulundu, Ana Bot başlatıldı.');
     } else {
+      logger.info('STARTUP', 'Yeni kurulum - bot eklemek için admin panelini kullanın', {});
       console.log('ℹ️  Kayıtlı bot yok. Admin panelinden bot ekleyin.');
     }
     return;
   }
+  
+  logger.success('STARTUP', `${dbBotlar.length} bot bulundu, başlatılıyor`, { botCount: dbBotlar.length, bots: dbBotlar.map(b => b.isim) });
+  
   dbBotlar.forEach(bot => {
+    logger.info('STARTUP', `Bot başlatılacak: "${bot.isim}"`, { clientId: bot.clientId });
     console.log(`🤖 [${bot.clientId}] "${bot.isim}" başlatılıyor...`);
     botOlustur(bot.clientId, bot.isim);
   });
 }
 
-process.on('unhandledRejection', r => console.warn('⚠️  Hata (devam):', r?.message || r));
-process.on('uncaughtException', e => console.warn('⚠️  Exception (devam):', e.message));
+process.on('unhandledRejection', r => {
+  logger.error('UNHANDLED_REJECTION', 'İşlenmemiş promise reddi', r, { error: String(r?.message || r) });
+  console.warn('⚠️  Hata (devam):', r?.message || r);
+});
+
+process.on('uncaughtException', e => {
+  logger.error('UNCAUGHT_EXCEPTION', 'Yakalanmamış exception', e, { error: e.message });
+  console.warn('⚠️  Exception (devam):', e.message);
+});
 
 // Düzgün kapanma
 let _kapaniyor = false;
 async function gracefulShutdown(signal) {
   if (_kapaniyor) return;
   _kapaniyor = true;
+  logger.info('SHUTDOWN', `Shutdown sinyali alındı: ${signal}`, { signal });
   console.log(`\n🛑 ${signal} alındı, kapatılıyor...`);
-  for (const [clientId] of botManager) { await botDurdur(clientId); }
+  for (const [clientId] of botManager) { 
+    logger.info('SHUTDOWN', `Bot kapatılıyor`, { clientId });
+    await botDurdur(clientId); 
+  }
+  logger.success('SHUTDOWN', 'Sistem başarıyla kapatıldı', {});
   process.exit(0);
 }
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
 
 // Web panelini başlat
-startServer(store, CONFIG, botManager, botOlustur, botDurdur, qrWaiters);
+logger.info('SERVER', 'HTTP Server başlatılıyor...', {});
+try {
+  startServer(store, CONFIG, botManager, botOlustur, botDurdur, qrWaiters);
+  logger.success('SERVER', 'HTTP Server başarıyla başlatıldı', {});
+} catch (err) {
+  logger.error('SERVER', 'HTTP Server başlatılamadı', err, {});
+}
 
+logger.info('STARTUP', 'WhatsApp Botlarının başlatılması başlıyor...', {});
 mevcutBotlariBaslat();
+
+// Log raporu yazdır
+setTimeout(() => {
+  const report = logger.getErrorReport();
+  if (report.hataCount > 0 || report.uyariCount > 0) {
+    console.log('\n' + '═'.repeat(50));
+    console.log('📊 BAŞLATMA ÖZETİ');
+    console.log('═'.repeat(50));
+    console.log(`✅ Başarılı işlemler: ${logger.getSuccessReport().basariCount}`);
+    console.log(`⚠️  Uyarılar: ${report.uyariCount}`);
+    console.log(`❌ Hatalar: ${report.hataCount}`);
+    console.log(`📄 Log dosyası: ${report.logFile}`);
+    console.log('═'.repeat(50) + '\n');
+  }
+}, 5000);
+

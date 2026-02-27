@@ -7,6 +7,14 @@
 const Database = require('better-sqlite3');
 const path     = require('path');
 
+// Logger (varsa kullan)
+let logger = null;
+try {
+  logger = require('./bot-logger');
+} catch (e) {
+  // bot-logger bulunamadı, sessizce devam et
+}
+
 const DB_PATH = path.join(__dirname, 'yuklegit.db');
 const db      = new Database(DB_PATH);
 
@@ -107,7 +115,7 @@ const _stmtIlanSehir1 = db.prepare(`
  */
 function ilanEkle({ hash, text, cities, chatName, chatId, senderPhone, timestamp }) {
   try {
-    _stmtIlanEkle.run({
+    const result = _stmtIlanEkle.run({
       hash:        String(hash),
       text:        String(text),
       cities:      JSON.stringify(Array.isArray(cities) ? cities : []),
@@ -116,9 +124,23 @@ function ilanEkle({ hash, text, cities, chatName, chatId, senderPhone, timestamp
       senderPhone: String(senderPhone || ''),
       timestamp:   Number(timestamp) || Date.now(),
     });
+    
+    if (logger && result.changes > 0) {
+      logger.success('ILAN_SAVE', 'İlan başarıyla kaydedildi', {
+        hash: hash,
+        cities: cities,
+        chatName: chatName,
+      });
+    }
   } catch (e) {
     // UNIQUE constraint = mükerrer ilan, sessizce geç
-    if (!e.message.includes('UNIQUE')) console.warn('ilanEkle hata:', e.message);
+    if (!e.message.includes('UNIQUE')) {
+      if (logger) {
+        logger.error('ILAN_SAVE', 'İlan kaydedilemedi', e, { hash });
+      } else {
+        console.warn('ilanEkle hata:', e.message);
+      }
+    }
   }
 }
 
@@ -127,101 +149,142 @@ function ilanEkle({ hash, text, cities, chatName, chatId, senderPhone, timestamp
  * İlçe listesini düzgün şekilde arar, il/ilçe sıralamasını doğru kontrol eder
  */
 function ilanAra(sehir1, sehir2, ilceler1, ilceler2) {
-  const since = Date.now() - 24 * 60 * 60 * 1000;
+  const startTime = Date.now();
+  try {
+    const since = Date.now() - 24 * 60 * 60 * 1000;
 
-  if (!sehir1) {
-    return _stmtIlanlarHepsi.all(since);
-  }
+    if (!sehir1) {
+      const results = _stmtIlanlarHepsi.all(since);
+      if (logger) {
+        logger.ilanSearch('(tümü)', '(tümü)', results.length, Date.now() - startTime);
+      }
+      return results;
+    }
 
-  const normStr = s => String(s||'')
-    .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
-    .replace(/Ğ/g,'g').replace(/ğ/g,'g')
-    .replace(/Ü/g,'u').replace(/ü/g,'u')
-    .replace(/Ş/g,'s').replace(/ş/g,'s')
-    .replace(/Ö/g,'o').replace(/ö/g,'o')
-    .replace(/Ç/g,'c').replace(/ç/g,'c')
-    .toLowerCase().trim()
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ').trim();
+    const normStr = s => String(s||'')
+      .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
+      .replace(/Ğ/g,'g').replace(/ğ/g,'g')
+      .replace(/Ü/g,'u').replace(/ü/g,'u')
+      .replace(/Ş/g,'s').replace(/ş/g,'s')
+      .replace(/Ö/g,'o').replace(/ö/g,'o')
+      .replace(/Ç/g,'c').replace(/ç/g,'c')
+      .toLowerCase().trim()
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\s+/g, ' ').trim();
 
-  // il + tüm ilçeler listesi (verilmemişse sadece şehir adı)
-  const list1 = ilceler1 && ilceler1.length ? ilceler1 : [sehir1];
-  const list2 = ilceler2 && ilceler2.length ? ilceler2 : (sehir2 ? [sehir2] : []);
+    // il + tüm ilçeler listesi (verilmemişse sadece şehir adı)
+    const list1 = ilceler1 && ilceler1.length ? ilceler1 : [sehir1];
+    const list2 = ilceler2 && ilceler2.length ? ilceler2 : (sehir2 ? [sehir2] : []);
 
-  // Normalize et
-  const nList1 = list1.map(s => normStr(s)).filter(Boolean);
-  const nList2 = list2.map(s => normStr(s)).filter(Boolean);
+    // Normalize et
+    const nList1 = list1.map(s => normStr(s)).filter(Boolean);
+    const nList2 = list2.map(s => normStr(s)).filter(Boolean);
 
-  // SQL: tüm ilanları al (timestamp filtresiyle), sonra JavaScript'te kontrol et
-  const sql = `SELECT * FROM ilanlar WHERE timestamp > ? ORDER BY timestamp DESC`;
-  let rows = db.prepare(sql).all(since);
+    // SQL: tüm ilanları al (timestamp filtresiyle), sonra JavaScript'te kontrol et
+    const sql = `SELECT * FROM ilanlar WHERE timestamp > ? ORDER BY timestamp DESC`;
+    let rows = db.prepare(sql).all(since);
 
-  // 1. Adım: list1'den en az biri ilanın metninde geçiyor mu?
-  rows = rows.filter(r => {
-    const normText = normStr(r.text);
-    return nList1.some(city => normText.includes(city));
-  });
-
-  // 2. Adım: Eğer varış belirtilmişse, list2 de ilanın metninde geçmeli
-  if (sehir2 && list2.length > 0) {
+    // 1. Adım: list1'den en az biri ilanın metninde geçiyor mu?
     rows = rows.filter(r => {
       const normText = normStr(r.text);
-      return nList2.some(city => normText.includes(city));
+      return nList1.some(city => normText.includes(city));
     });
 
-    // 3. Adım: Aynı satırda list1'den biri SONRA list2'den biri geç mi?
-    // Bu sıralama önemli: başlangıç → varış
-    rows = rows.filter(r => {
-      const satirlar = r.text.split(/[\n\r]+/).map(s => normStr(s));
-      for (const satir of satirlar) {
-        // list1'den ilk eşleşen pozisyonu bul
-        let p1 = -1;
-        let firstCity1 = null;
-        for (const n of nList1) {
-          const idx = satir.indexOf(n);
-          if (idx !== -1 && (p1 === -1 || idx < p1)) {
-            p1 = idx;
-            firstCity1 = n;
-          }
-        }
-        if (p1 === -1) continue;
+    // 2. Adım: Eğer varış belirtilmişse, list2 de ilanın metninde geçmeli
+    if (sehir2 && list2.length > 0) {
+      rows = rows.filter(r => {
+        const normText = normStr(r.text);
+        return nList2.some(city => normText.includes(city));
+      });
 
-        // list2'den ilk eşleşen pozisyonu bul
-        let p2 = -1;
-        let firstCity2 = null;
-        for (const n of nList2) {
-          const idx = satir.indexOf(n);
-          if (idx !== -1 && (p2 === -1 || idx < p2)) {
-            p2 = idx;
-            firstCity2 = n;
+      // 3. Adım: Aynı satırda list1'den biri SONRA list2'den biri geç mi?
+      // Bu sıralama önemli: başlangıç → varış
+      rows = rows.filter(r => {
+        const satirlar = r.text.split(/[\n\r]+/).map(s => normStr(s));
+        for (const satir of satirlar) {
+          // list1'den ilk eşleşen pozisyonu bul
+          let p1 = -1;
+          let firstCity1 = null;
+          for (const n of nList1) {
+            const idx = satir.indexOf(n);
+            if (idx !== -1 && (p1 === -1 || idx < p1)) {
+              p1 = idx;
+              firstCity1 = n;
+            }
           }
-        }
+          if (p1 === -1) continue;
 
-        // list2'den biri p1'den sonra mı?
-        if (p2 !== -1 && p2 > p1) return true;
-      }
-      return false;
-    });
+          // list2'den ilk eşleşen pozisyonu bul
+          let p2 = -1;
+          let firstCity2 = null;
+          for (const n of nList2) {
+            const idx = satir.indexOf(n);
+            if (idx !== -1 && (p2 === -1 || idx < p2)) {
+              p2 = idx;
+              firstCity2 = n;
+            }
+          }
+
+          // list2'den biri p1'den sonra mı?
+          if (p2 !== -1 && p2 > p1) return true;
+        }
+        return false;
+      });
+    }
+
+    if (logger) {
+      logger.ilanSearch(sehir1 || '?', sehir2 || '?', rows.length, Date.now() - startTime);
+    }
+
+    return rows;
+  } catch (e) {
+    if (logger) {
+      logger.error('SEARCH_PROCESS', 'İlan arama başarısız', e, {
+        sehir1,
+        sehir2,
+        duration: Date.now() - startTime
+      });
+    }
+    return [];
   }
-
-  return rows;
 }
 
 /**
  * Eski ilanları temizle (24 saatten eski)
  */
 function ilanTemizle() {
-  const since  = Date.now() - 24 * 60 * 60 * 1000;
-  const result = db.prepare('DELETE FROM ilanlar WHERE timestamp < ?').run(since);
-  if (result.changes > 0) console.log(`🗑️  ${result.changes} eski ilan silindi.`);
+  try {
+    const since  = Date.now() - 24 * 60 * 60 * 1000;
+    const result = db.prepare('DELETE FROM ilanlar WHERE timestamp < ?').run(since);
+    if (result.changes > 0) {
+      if (logger) {
+        logger.info('DATABASE', `${result.changes} eski ilan silindi`, {
+          deletedCount: result.changes
+        });
+      }
+      console.log(`🗑️  ${result.changes} eski ilan silindi.`);
+    }
+  } catch (e) {
+    if (logger) {
+      logger.error('DATABASE', 'İlan temizleme başarısız', e);
+    }
+  }
 }
 
 /**
  * Toplam aktif ilan sayısı
  */
 function ilanSayisi() {
-  const since = Date.now() - 24 * 60 * 60 * 1000;
-  return db.prepare('SELECT COUNT(*) as n FROM ilanlar WHERE timestamp > ?').get(since).n;
+  try {
+    const since = Date.now() - 24 * 60 * 60 * 1000;
+    const result = db.prepare('SELECT COUNT(*) as n FROM ilanlar WHERE timestamp > ?').get(since);
+    return result.n;
+  } catch (e) {
+    if (logger) {
+      logger.error('DATABASE', 'İlan sayısı hesaplama başarısız', e);
+    }
+    return 0;
+  }
 }
 
 // Her saat temizle
@@ -324,15 +387,34 @@ function loglariGetir(limit = 200) {
 // ══════════════════════════════════════════════
 
 function botEkle({ isim, clientId }) {
-  const var_ = db.prepare('SELECT id FROM bots WHERE clientId = ?').get(clientId);
-  if (var_) return var_.id;
-  const r = db.prepare('INSERT INTO bots (isim, clientId, durum) VALUES (?, ?, ?)').run(isim, clientId, 'bekliyor');
-  return r.lastInsertRowid;
+  try {
+    const var_ = db.prepare('SELECT id FROM bots WHERE clientId = ?').get(clientId);
+    if (var_) return var_.id;
+    const r = db.prepare('INSERT INTO bots (isim, clientId, durum) VALUES (?, ?, ?)').run(isim, clientId, 'bekliyor');
+    if (logger) {
+      logger.success('BOT_CREATE', 'Bot veritabanına eklendi', { isim, clientId });
+    }
+    return r.lastInsertRowid;
+  } catch (e) {
+    if (logger) {
+      logger.error('BOT_CREATE', 'Bot eklenirken hata', e, { isim, clientId });
+    }
+    return null;
+  }
 }
 
 function botGuncelle(clientId, updates) {
-  const fields = Object.keys(updates).map(k => `${k} = @${k}`).join(', ');
-  db.prepare(`UPDATE bots SET ${fields} WHERE clientId = @clientId`).run({ ...updates, clientId });
+  try {
+    const fields = Object.keys(updates).map(k => `${k} = @${k}`).join(', ');
+    db.prepare(`UPDATE bots SET ${fields} WHERE clientId = @clientId`).run({ ...updates, clientId });
+    if (logger) {
+      logger.info('DATABASE', 'Bot güncellendi', { clientId, updates });
+    }
+  } catch (e) {
+    if (logger) {
+      logger.error('DATABASE', 'Bot güncelleme başarısız', e, { clientId });
+    }
+  }
 }
 
 function botSil(clientId) {
