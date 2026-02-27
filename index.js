@@ -214,8 +214,8 @@ function containsPhone(text) {
   CONFIG.PHONE_REGEX.lastIndex = 0;
   if (CONFIG.PHONE_REGEX.test(text)) { CONFIG.PHONE_REGEX.lastIndex = 0; return true; }
   CONFIG.PHONE_REGEX.lastIndex = 0;
-  // 2. Boşluklu/çizgili format: "0532 123 45 67", "+90 532 123 45 67", "0532-123-45-67"
-  const compact = text.replace(/[\s\-()+.]/g, '');
+  // 2. Boşluklu/çizgili/WhatsApp-formatlı: "0532 123 45 67", "*0507 448 43 40*", "0532-123-45-67"
+  const compact = text.replace(/[\s\-()+.*_~]/g, '');
   return /(?:90|0)5\d{9}/.test(compact);
 }
 

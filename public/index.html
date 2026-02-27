@@ -1075,13 +1075,19 @@ function renderSatirlar(text, matchedTerms, ilceler1, ilceler2){
 
 function hlText(text, terms){
   // 1. Metni parçalara böl: tel numaraları ayrı, gerisi ayrı
-  const TEL_RE = /(?<!\d)((?:\+90|0)5\d{9})(?!\d)/g;
+  // Desteklenen formatlar:
+  //   05321234567        → bitişik
+  //   0546 521 09 29     → boşluklu gruplar
+  //   *0507 448 43 40*   → WhatsApp kalın (yıldız) formatı
+  //   0532-123-45-67     → tireli
+  //   +90 532 123 45 67  → ülke kodu + boşluklu
+  const TEL_RE = /(?<!\d)[*_~]?((?:\+\s*90|0)\s*5(?:[ .\-]?\d){9})[*_~]?(?!\d)/g;
   const parcalar = []; // {type:'text'|'tel', val}
   let son = 0, m;
   TEL_RE.lastIndex = 0;
   while ((m = TEL_RE.exec(text)) !== null) {
     if (m.index > son) parcalar.push({ type: 'text', val: text.slice(son, m.index) });
-    parcalar.push({ type: 'tel', val: m[1] });
+    parcalar.push({ type: 'tel', val: m[1] }); // m[1] = sadece rakamlar+boşluk, yıldızsız
     son = m.index + m[0].length;
   }
   if (son < text.length) parcalar.push({ type: 'text', val: text.slice(son) });
@@ -1111,7 +1117,9 @@ function hlText(text, terms){
   // 4. Birleştir
   return parcalar.map(p => {
     if (p.type === 'tel') {
-      const intl = p.val.startsWith('+') ? p.val : '+9' + p.val;
+      // Boşluk/tire gibi ayraçları soy, her zaman +90XXXXXXXXXX formatına getir
+      const digits = p.val.replace(/\D/g, ''); // sadece rakamlar
+      const intl = '+90' + digits.slice(-10);  // son 10 rakam = operatör + abone
       return '<a href="tel:'+intl+'" class="telLink">'+esc(p.val)+'</a>';
     }
     return highlightText(p.val);
