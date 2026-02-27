@@ -698,6 +698,7 @@ function botOlustur(clientId, isim) {
         }, 5_000);  // ← 5 saniye sonra reconnect (super hızlı!)
       }
     }, 30_000);  // ← 30 saniyede bir kontrol (2 dakikadan 4x daha sık)
+  });
 
   client.on('message_create', async (msg) => {
     try {
@@ -951,59 +952,9 @@ function botOlustur(clientId, isim) {
   });
 
   client.initialize().catch(e => {
-    const botSessionDir = path.join(SESSIONS_DIR, `bot_${clientId}`);
-    const sessionExists = fs.existsSync(botSessionDir);
-    const errorMsg = String(e.message || e);
-    
-    // "Navigating frame was detached" = temporary Puppeteer crash, retry
-    const isRetryable = errorMsg.includes('frame was detached') || 
-                       errorMsg.includes('Target closed') ||
-                       errorMsg.includes('Connection lost');
-
-    logger.error('BOT_INIT', `Client başlatılamadı`, e, {
-      clientId,
-      sessionDir: botSessionDir,
-      sessionExists,
-      errorMsg: errorMsg.substring(0, 200),
-      isRetryable,
-      hint: errorMsg.includes('EACCES') ? 'İZİN HATASI - Klasöre yazma izni yok!' : 
-            errorMsg.includes('ENOENT') ? 'KLASÖR YOK - .wwebjs_sessions oluşturulamadı' :
-            errorMsg.includes('AUTH') ? 'OTURUM BAŞARILI - QR gerekiyor' : 
-            isRetryable ? 'Puppeteer restart - 30 saniye sonra yeniden dene' : 'BİLİNMEYEN HATA'
-    });
-
-    console.error(`❌ [${clientId}] initialize hatası: ${e.message}`);
+    logger.error('BOT_INIT', 'Client initialize basarisiz', e, { clientId });
     bot.durum = 'hata';
     botGuncelle(clientId, { durum: 'hata' });
-    
-    // Retryable hatalar için otomatik restart
-    if (isRetryable) {
-      console.log(`🔄 [${clientId}] 30 saniye sonra yeniden deneniyor...`);
-      setTimeout(async () => {
-        if (!botManager.has(clientId)) return;
-        
-        try {
-          if (bot.client && bot.client.pupBrowser) {
-            await bot.client.pupBrowser.close().catch(() => {});
-          }
-        } catch (ex) {}
-        
-        try { await bot.client.destroy(); } catch (ex) {}
-        botManager.delete(clientId);
-        
-        setTimeout(async () => {
-          const dbBot = require('./db').botBul(clientId);
-          if (dbBot) {
-            logger.info('BOT_INIT_RETRY', `Puppeteer restart'inden sonra bot yeniden başlatılıyor`, {
-              clientId,
-              isim: dbBot.isim,
-              originalError: errorMsg.substring(0, 150)
-            });
-            botOlustur(clientId, dbBot.isim);
-          }
-        }, 3_000);
-      }, 30_000);
-    }
   });
 
   return bot;
