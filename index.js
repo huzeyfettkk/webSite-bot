@@ -9,9 +9,23 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const { startServer } = require('./server');
 const { ilanEkle }    = require('./db');
 const qrcode          = require('qrcode-terminal');
+const fs              = require('fs');
+const path            = require('path');
 
 // Bot başlatma logu
 logger.botStart();
+
+// ── Session klasörleri oluştur ─────────────────────────
+// Her bot kendi session dosyasını depolar — çakışma yok
+const SESSIONS_DIR = path.join(__dirname, '.wwebjs_sessions');
+if (!fs.existsSync(SESSIONS_DIR)) {
+  try {
+    fs.mkdirSync(SESSIONS_DIR, { recursive: true, mode: 0o755 });
+    logger.info('STARTUP', `Session klasörü oluşturuldu: ${SESSIONS_DIR}`, {});
+  } catch (err) {
+    logger.error('STARTUP', `Session klasörü oluşturulamadı`, err, { path: SESSIONS_DIR });
+  }
+}
 
 const CONFIG = {
   TTL_MS: 1 * 60 * 60 * 1000, // 1 saat
@@ -505,8 +519,27 @@ function botOlustur(clientId, isim) {
   logger.info('BOT_CREATE', `Bot oluşturuluyor: "${isim}"`, { clientId });
   temizleLock(clientId);
 
+  // ── Her bot için ayrı session klasörü ─────────────────────────
+  const botSessionDir = path.join(SESSIONS_DIR, `bot_${clientId}`);
+  
+  // Klasörü oluştur (varsa sessioni kurtarır)
+  try {
+    if (!fs.existsSync(botSessionDir)) {
+      fs.mkdirSync(botSessionDir, { recursive: true, mode: 0o755 });
+      logger.info('BOT_SESSION', `Session klasörü oluşturuldu`, { clientId, path: botSessionDir });
+    } else {
+      // Var olan session'ı kullan (Reconnect — yeni QR gerekmez)
+      logger.success('BOT_SESSION', `Var olan session bulundu, yeniden bağlanılıyor`, { clientId, path: botSessionDir });
+    }
+  } catch (err) {
+    logger.error('BOT_SESSION', `Session klasörü oluşturulamadı (İZİN HATASI)`, err, { clientId, path: botSessionDir });
+  }
+
   const client = new Client({
-    authStrategy: new LocalAuth({ clientId }),
+    authStrategy: new LocalAuth({
+      clientId,
+      dataPath: botSessionDir  // ← KRITIK: Her bot ayrı klasörde oturum saklıyor
+    }),
     qrMaxRetries: 0,  // Sonsuz bekle — QR taranana kadar yenile
     puppeteer: puppeteerOpts(),
   });
@@ -772,22 +805,65 @@ function botOlustur(clientId, isim) {
     temizleLock(clientId);
     if (bot._watchdog) { clearInterval(bot._watchdog); bot._watchdog = null; }
 
-    // Her durumda yeniden bağlan.
-    // Oturum (.wwebjs_auth) geçerliyse → QR gerekmez, otomatik bağlanır.
-    // Oturum sona erdiyse (LOGOUT) → QR gösterir, admin panelinden taranır.
-    const bekleme = String(reason).toUpperCase() === 'LOGOUT' ? 5_000 : 20_000;
-    console.log(`🔄 [${clientId}] ${bekleme / 1000}s sonra yeniden bağlanılıyor... (sebep: ${reason})`);
+    // ── Session'u kurtarma kontrolü ──────────────────────────────────────
+    const botSessionDir = path.join(SESSIONS_DIR, `bot_${clientId}`);
+    const sessionExists = fs.existsSync(botSessionDir);
+    const authTokenFile = path.join(botSessionDir, 'session-data.json');
+    const authValid = fs.existsSync(authTokenFile);
+
+    // Hangi durumda yeniden bağlan?
+    // - LOGOUT: Telefon WhatsApp Web'den "bağlı cihazlardan çıkış"
+    //   → Oturum kaydedilmedi, QR lazım
+    // - CONNECTION_ERROR/DISCONNECTED: İnternet kesildi, bağlantı hatasından kurtulma
+    //   → Session hala varsa, otomatik bağlanır (QR gerekmez)
+    const isLogout = String(reason).toUpperCase() === 'LOGOUT';
+    const bekleme = isLogout ? 5_000 : 20_000;
+
+    logger.warn('WHATSAPP_DISCONNECT', `Bot bağlantısı kesildi`, {
+      clientId,
+      reason: String(reason),
+      sessionExists,
+      hasAuthToken: authValid,
+      action: bekleme === 5_000 ? 'QR gerekecek' : 'Otomatik bağlanmaya çalış'
+    });
+
+    console.log(`🔄 [${clientId}] ${bekleme / 1000}s sonra yeniden bağlanılıyor...`);
+    console.log(`   Sebep: ${reason} | Session: ${sessionExists ? 'var ✅' : 'yok ❌'} | Token: ${authValid ? 'geçerli ✅' : 'geçersiz ❌'}`);
+
     setTimeout(async () => {
       if (!botManager.has(clientId)) return;
       try { await bot.client.destroy(); } catch {}
       botManager.delete(clientId);
       const dbBot = require('./db').botBul(clientId);
-      if (dbBot) botOlustur(clientId, dbBot.isim);
+      if (dbBot) {
+        logger.info('BOT_RECONNECT', `Bot yeniden başlatılıyor`, {
+          clientId,
+          isim: dbBot.isim,
+          sessionWasAvailable: sessionExists
+        });
+        botOlustur(clientId, dbBot.isim);
+      } else {
+        logger.error('BOT_RECONNECT', `Bot veritabanında bulunamadı, reconnect başarısız`, new Error('Bot not found'), { clientId });
+      }
     }, bekleme);
   });
 
   client.initialize().catch(e => {
-    console.error(`❌ [${clientId}] initialize hatası:`, e.message);
+    const botSessionDir = path.join(SESSIONS_DIR, `bot_${clientId}`);
+    const sessionExists = fs.existsSync(botSessionDir);
+    const errorMsg = String(e.message || e);
+
+    logger.error('BOT_INIT', `Client başlatılamadı`, e, {
+      clientId,
+      sessionDir: botSessionDir,
+      sessionExists,
+      errorMsg: errorMsg.substring(0, 200),
+      hint: errorMsg.includes('EACCES') ? 'İZİN HATASI - Klasöre yazma izni yok!' : 
+            errorMsg.includes('ENOENT') ? 'KLASÖR YOK - .wwebjs_sessions oluşturulamadı' :
+            errorMsg.includes('AUTH') ? 'OTURUM BAŞARILI - QR gerekiyor' : 'BİLİNMEYEN HATA'
+    });
+
+    console.error(`❌ [${clientId}] initialize hatası: ${e.message}`);
     bot.durum = 'hata';
     botGuncelle(clientId, { durum: 'hata' });
   });
