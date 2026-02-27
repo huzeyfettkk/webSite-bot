@@ -592,33 +592,34 @@ function botOlustur(clientId, isim) {
       }
 
       // Grup: ilan kaydet
-      if (isIlan(body)) {
-        const cities    = extractCities(body);
-        const linePairs = extractLinePairs(body);
-        const timestamp = msg.timestamp * 1000;
-        const hash      = contentHash(body);
-
-        // Metinde Türkiye telefon numarası var mı kontrol et
-        CONFIG.PHONE_REGEX.lastIndex = 0;
-        const metindeTel = CONFIG.PHONE_REGEX.test(body);
-        CONFIG.PHONE_REGEX.lastIndex = 0;
-
-        // Gönderenin numarasını al — WhatsApp formatı: 905XXXXXXXXX@c.us
-        let senderPhone = '';
-        try {
-          const raw = (msg.author || msg.from || '').split('@')[0].replace(/\D/g, '');
-          // 905XXXXXXXXX → +905XXXXXXXXX (13 hane)
-          if (/^905\d{9}$/.test(raw)) {
-            senderPhone = '+' + raw;
-          }
-        } catch {}
-
-        // Metinde Türkiye numarası yoksa gönderenin numarasını ekle
-        let finalText = body;
-        if (!metindeTel && senderPhone) {
-          finalText = body.trimEnd() + '\n📞 ' + senderPhone;
-          console.log(`📞 [${clientId}] Numara eklendi: ${senderPhone}`);
+      // ── ÖNCE gönderenin numarasını al ──────────
+      let senderPhone = '';
+      try {
+        const raw = (msg.author || msg.from || '').split('@')[0].replace(/\D/g, '');
+        // 905XXXXXXXXX → +905XXXXXXXXX (13 hane)
+        if (/^905\d{9}$/.test(raw)) {
+          senderPhone = '+' + raw;
         }
+      } catch {}
+
+      // Metinde Türkiye telefon numarası var mı kontrol et
+      CONFIG.PHONE_REGEX.lastIndex = 0;
+      const metindeTel = CONFIG.PHONE_REGEX.test(body);
+      CONFIG.PHONE_REGEX.lastIndex = 0;
+
+      // Metinde numara yoksa gönderenin numarasını ekle (isIlan kontrolünden ÖNCE)
+      let finalText = body;
+      if (!metindeTel && senderPhone) {
+        finalText = body.trimEnd() + '\n📞 ' + senderPhone;
+        console.log(`📞 [${clientId}] Numara eklendi: ${senderPhone}`);
+      }
+
+      // isIlan kontrolünü finalText üzerinde yap (gönderenin numarası dahil)
+      if (isIlan(finalText)) {
+        const cities    = extractCities(finalText);
+        const linePairs = extractLinePairs(finalText);
+        const timestamp = msg.timestamp * 1000;
+        const hash      = contentHash(body); // dedup için orijinal body hash'i
 
         store.add(msg.from + '_' + msg.id.id, {
           text: finalText, cities, linePairs,
