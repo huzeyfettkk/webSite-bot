@@ -556,36 +556,48 @@ function botOlustur(clientId, isim) {
   client.on('qr', qr => {
     bot.durum  = 'qr_bekleniyor';
     bot.qrData = qr;
-    bot._authHandled = false;  // ← QR gene gösteriliyorsa, authenticated reset et
-    bot._qrAttempts++;  // ← QR deneme sayısını artır
-    
+    bot._authHandled = false;
+    bot._qrAttempts++;
+
     botGuncelle(clientId, { durum: 'qr_bekleniyor' });
     logger.info('WHATSAPP_QR', `QR kod oluşturuldu, taranması bekleniyor`, { clientId, qrLength: qr.length, attemptNumber: bot._qrAttempts });
-    console.log(`📱 [${clientId}] QR hazır (Deneme: ${bot._qrAttempts})`);
-    
-    // ─── Eğer reconnect sonrası 2+'nci QR geliyorsa = session corrupt ─────
-    // Session file'ı sil ve clean restart yap
-    if (bot._qrAttempts >= 2 && bot._sessionDir) {
-      console.warn(`⚠️  [${clientId}] Session'ın 2. kez QR istiyor: Corrupted? Temizliyor...`);
-      logger.warn('SESSION_CORRUPTION_DETECTED', 'Session dosyası corrupted, temizleniyor', {
-        clientId,
-        attemptCount: bot._qrAttempts,
-        sessionDir: bot._sessionDir
-      });
-      
-      // Session'ı sil
-      try {
-        if (fs.existsSync(bot._sessionDir)) {
-          fs.rmSync(bot._sessionDir, { recursive: true, force: true });
-          console.log(`🗑️  [${clientId}] Corrupted session silindi: ${bot._sessionDir}`);
-        }
-      } catch (err) {
-        logger.error('SESSION_CLEANUP', 'Session silme hatası', err, { clientId });
-      }
-    }
-    
+    console.log(`📱 [${clientId}] QR hazır (Deneme: ${bot._qrAttempts}) — panelden tarayın`);
+
     // SSE'ye qr_ready eventi gönder (frontend /qr-image endpoint'inden çeker)
     qrGonder(clientId, 'yeni');
+  });
+
+  // ─── Gerçek auth hatası: WhatsApp QR tarandı ama reddetti ─────────────
+  // Bu event yalnızca WhatsApp'ın kendi kimlik doğrulaması başarısız olunca gelir.
+  // Sebebi: ban, hesap kısıtlaması veya eski/geçersiz token.
+  client.on('auth_failure', async (msg) => {
+    console.error(`❌ [${clientId}] Auth başarısız: ${msg} — session temizleniyor, yeniden başlatılıyor...`);
+    logger.error('WHATSAPP_AUTH_FAILURE', 'Kimlik doğrulama başarısız, session siliniyor', new Error(String(msg)), { clientId, msg: String(msg) });
+
+    bot.durum = 'hata';
+    botGuncelle(clientId, { durum: 'hata' });
+    durumGonder(clientId, 'hata');
+
+    // Corrupted/rejected session'ı temizle
+    try {
+      if (bot._sessionDir && fs.existsSync(bot._sessionDir)) {
+        fs.rmSync(bot._sessionDir, { recursive: true, force: true });
+        console.log(`🗑️  [${clientId}] Geçersiz session silindi`);
+      }
+    } catch (err) {
+      logger.error('SESSION_CLEANUP', 'Session silme hatası', err, { clientId });
+    }
+
+    // Botu yeniden başlat (temiz session ile yeni QR üretir)
+    try { await bot.client.destroy(); } catch {}
+    botManager.delete(clientId);
+    setTimeout(async () => {
+      const dbBot = require('./db').botBul(clientId);
+      if (dbBot) {
+        logger.info('BOT_RESTART', 'Auth hatası sonrası bot yeniden başlatılıyor', { clientId });
+        botOlustur(clientId, dbBot.isim);
+      }
+    }, 5_000);
   });
 
   client.on('authenticated', () => {
