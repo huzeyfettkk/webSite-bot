@@ -542,20 +542,60 @@ function botOlustur(clientId, isim) {
     puppeteer: puppeteerOpts(),
   });
 
-  const bot = { client, clientId, isim, durum: 'baslatiliyor', qrData: null, _watchdog: null };
+  const bot = { 
+    client, clientId, isim, 
+    durum: 'baslatiliyor', 
+    qrData: null, 
+    _watchdog: null,
+    _authHandled: false,  // ← Duplicate authenticated olayını prevent et
+    _qrAttempts: 0,       // ← QR deneme sayısı (session corruption detect etmek için)
+    _sessionDir: botSessionDir
+  };
   botManager.set(clientId, bot);
 
   client.on('qr', qr => {
     bot.durum  = 'qr_bekleniyor';
     bot.qrData = qr;
+    bot._authHandled = false;  // ← QR gene gösteriliyorsa, authenticated reset et
+    bot._qrAttempts++;  // ← QR deneme sayısını artır
+    
     botGuncelle(clientId, { durum: 'qr_bekleniyor' });
-    logger.info('WHATSAPP_QR', `QR kod oluşturuldu, taranması bekleniyor`, { clientId, qrLength: qr.length });
-    console.log(`📱 [${clientId}] QR hazır`);
+    logger.info('WHATSAPP_QR', `QR kod oluşturuldu, taranması bekleniyor`, { clientId, qrLength: qr.length, attemptNumber: bot._qrAttempts });
+    console.log(`📱 [${clientId}] QR hazır (Deneme: ${bot._qrAttempts})`);
+    
+    // ─── Eğer reconnect sonrası 2+'nci QR geliyorsa = session corrupt ─────
+    // Session file'ı sil ve clean restart yap
+    if (bot._qrAttempts >= 2 && bot._sessionDir) {
+      console.warn(`⚠️  [${clientId}] Session'ın 2. kez QR istiyor: Corrupted? Temizliyor...`);
+      logger.warn('SESSION_CORRUPTION_DETECTED', 'Session dosyası corrupted, temizleniyor', {
+        clientId,
+        attemptCount: bot._qrAttempts,
+        sessionDir: bot._sessionDir
+      });
+      
+      // Session'ı sil
+      try {
+        if (fs.existsSync(bot._sessionDir)) {
+          fs.rmSync(bot._sessionDir, { recursive: true, force: true });
+          console.log(`🗑️  [${clientId}] Corrupted session silindi: ${bot._sessionDir}`);
+        }
+      } catch (err) {
+        logger.error('SESSION_CLEANUP', 'Session silme hatası', err, { clientId });
+      }
+    }
+    
     // SSE'ye qr_ready eventi gönder (frontend /qr-image endpoint'inden çeker)
     qrGonder(clientId, 'yeni');
   });
 
   client.on('authenticated', () => {
+    // ─── Duplicate authenticated event'ini prevent et ─────────────────────
+    if (bot._authHandled === true) {
+      logger.debug('WHATSAPP_AUTH', 'Duplicate authenticated event ignored', { clientId });
+      return;  // ← Sadece BİR sefer işlem yap
+    }
+    bot._authHandled = true;
+    
     bot.durum  = 'dogrulandi';
     bot.qrData = null;
     botGuncelle(clientId, { durum: 'dogrulandi' });
