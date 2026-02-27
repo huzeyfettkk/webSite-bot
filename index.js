@@ -652,8 +652,9 @@ function botOlustur(clientId, isim) {
       });
     } catch {}
 
-    // ── Heartbeat: Her 2 dakikada WhatsApp bağlantısını kontrol et ──
+    // ── Heartbeat: Her 30 saniyede WhatsApp bağlantısını kontrol et ──
     // Silent disconnect (sessiz kopma) durumunu yakalar
+    // Multi-session kickout'ları hızlıca yakalar
     if (bot._watchdog) clearInterval(bot._watchdog);
     bot._watchdog = setInterval(async () => {
       if (!botManager.has(clientId)) { clearInterval(bot._watchdog); return; }
@@ -663,21 +664,40 @@ function botOlustur(clientId, isim) {
         if (state !== 'CONNECTED') throw new Error(`durum=${state}`);
       } catch (e) {
         logger.error('HEARTBEAT', `Kalp atışı başarısız, bağlantı yeniden kurulacak`, e, { clientId });
-        console.warn(`💓 [${clientId}] Heartbeat başarısız (${e.message}) — yeniden bağlanılıyor...`);
+        console.warn(`💓 [${clientId}] Heartbeat başarısız (${e.message}) — 5s sonra yeniden bağlanılıyor...`);
         clearInterval(bot._watchdog); bot._watchdog = null;
         bot.durum = 'baglanti_kesildi';
         botGuncelle(clientId, { durum: 'baglanti_kesildi' });
         durumGonder(clientId, 'baglanti_kesildi');
+        
+        // ── Hızlı reconnect (telefondan sync sırasında disconnect) ───────
         setTimeout(async () => {
           if (!botManager.has(clientId)) return;
+          
+          try { 
+            if (bot.client && bot.client.pupBrowser) {
+              await bot.client.pupBrowser.close().catch(() => {});
+            }
+          } catch (ex) {}
+          
           try { await bot.client.destroy(); } catch {}
           botManager.delete(clientId);
-          const dbBot = require('./db').botBul(clientId);
-          if (dbBot) botOlustur(clientId, dbBot.isim);
-        }, 10_000);
+          
+          // 2 saniye sonra reconnect (token hala valid olur)
+          setTimeout(async () => {
+            const dbBot = require('./db').botBul(clientId);
+            if (dbBot) {
+              logger.info('HEARTBEAT_RECONNECT', 'Heartbeat fail sonrası quick reconnect', {
+                clientId,
+                isim: dbBot.isim,
+                originalError: String(e.message).substring(0, 100)
+              });
+              botOlustur(clientId, dbBot.isim);
+            }
+          }, 2_000);
+        }, 5_000);  // ← 5 saniye sonra reconnect (super hızlı!)
       }
-    }, 2 * 60 * 1000);
-  });
+    }, 30_000);  // ← 30 saniyede bir kontrol (2 dakikadan 4x daha sık)
 
   client.on('message_create', async (msg) => {
     try {
@@ -862,24 +882,39 @@ function botOlustur(clientId, isim) {
     const authTokenFile = path.join(botSessionDir, 'session-data.json');
     const authValid = fs.existsSync(authTokenFile);
 
+    // ── Multi-session kickout detection (telefondan işlem yapıldığında) ───
+    // Eğer session valid ama disconnect oluyorsa = WhatsApp multi-session conflict
+    const isMultiSessionKickout = authValid && sessionExists && !String(reason).toUpperCase().includes('LOGOUT');
+
     // Hangi durumda yeniden bağlan?
-    // - LOGOUT: Telefon WhatsApp Web'den "bağlı cihazlardan çıkış"
-    //   → Oturum kaydedilmedi, QR lazım
-    // - CONNECTION_ERROR/DISCONNECTED: İnternet kesildi, bağlantı hatasından kurtulma
-    //   → Session hala varsa, otomatik bağlanır (QR gerekmez)
+    // - LOGOUT: Telefon WhatsApp Web'den "bağlı cihazlardan çıkış" → QR lazım
+    // - Multi-session kickout: Telefondan sync → Token hala var → SUPER HIZLI reconnect
+    // - CONNECTION_ERROR: İnternet kesildi → Normal reconnect
     const isLogout = String(reason).toUpperCase() === 'LOGOUT';
-    const bekleme = isLogout ? 5_000 : 20_000;
+    let bekleme;
+    
+    if (isMultiSessionKickout) {
+      bekleme = 3_000;  // ← 3 saniye (telefondan işlem yapılırken en hızlı reconnect)
+      console.log(`📲 [${clientId}] Multi-session kickout detected! Hızlı reconnect: 3 saniye`);
+    } else if (isLogout) {
+      bekleme = 5_000;  // ← 5 saniye (admin QR tarayacak)
+    } else {
+      bekleme = 10_000; // ← 10 saniye (connection error, daha stabil reconnect)
+    }
 
     logger.warn('WHATSAPP_DISCONNECT', `Bot bağlantısı kesildi`, {
       clientId,
       reason: String(reason),
       sessionExists,
       hasAuthToken: authValid,
-      action: bekleme === 5_000 ? 'QR gerekecek' : 'Otomatik bağlanmaya çalış'
+      isMultiSessionKickout,
+      reconnectDelay: `${bekleme / 1000}s`,
+      action: isLogout ? 'QR gerekecek' : isMultiSessionKickout ? 'Token ile reconnect' : 'Normal reconnect'
     });
 
     console.log(`🔄 [${clientId}] ${bekleme / 1000}s sonra yeniden bağlanılıyor...`);
     console.log(`   Sebep: ${reason} | Session: ${sessionExists ? 'var ✅' : 'yok ❌'} | Token: ${authValid ? 'geçerli ✅' : 'geçersiz ❌'}`);
+    if (isMultiSessionKickout) console.log(`   📲 Multi-session çakışması algılandı - hızlı reconnect!`);
 
     setTimeout(async () => {
       if (!botManager.has(clientId)) return;
