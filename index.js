@@ -192,8 +192,20 @@ function contentHash(str) {
 }
 
 function containsPhone(text) {
+  // 1. Kesin format: 05321234567 veya +905321234567
   CONFIG.PHONE_REGEX.lastIndex = 0;
-  return CONFIG.PHONE_REGEX.test(text);
+  if (CONFIG.PHONE_REGEX.test(text)) { CONFIG.PHONE_REGEX.lastIndex = 0; return true; }
+  CONFIG.PHONE_REGEX.lastIndex = 0;
+  // 2. Boşluklu/çizgili format: "0532 123 45 67", "+90 532 123 45 67", "0532-123-45-67"
+  const compact = text.replace(/[\s\-()+.]/g, '');
+  return /(?:90|0)5\d{9}/.test(compact);
+}
+
+// İlan filtreleme için lenient şehir kontrolü (substring eşleşme)
+// "İstanbuldan", "Ankaraya" gibi Türkçe ek almış yazımları yakalar
+function containsCity(text) {
+  const normText = normalize(text);
+  return CONFIG.CITIES.some(c => normText.includes(normalize(c)));
 }
 
 function extractCities(text) {
@@ -256,7 +268,8 @@ function isBlacklisted(text) {
 
 function isIlan(text) {
   if (isBlacklisted(text)) return false;
-  return containsPhone(text) && extractCities(text).length >= 1;
+  // containsCity: substring eşleşme — "İstanbuldan", "Ankaraya" gibi ek almış yazımları da yakalar
+  return containsPhone(text) && containsCity(text);
 }
 
 function timeAgo(ts) {
@@ -602,10 +615,8 @@ function botOlustur(clientId, isim) {
         }
       } catch {}
 
-      // Metinde Türkiye telefon numarası var mı kontrol et
-      CONFIG.PHONE_REGEX.lastIndex = 0;
-      const metindeTel = CONFIG.PHONE_REGEX.test(body);
-      CONFIG.PHONE_REGEX.lastIndex = 0;
+      // Metinde Türkiye telefon numarası var mı? (boşluklu format dahil)
+      const metindeTel = containsPhone(body);
 
       // Metinde numara yoksa gönderenin numarasını ekle (isIlan kontrolünden ÖNCE)
       let finalText = body;
@@ -615,7 +626,11 @@ function botOlustur(clientId, isim) {
       }
 
       // isIlan kontrolünü finalText üzerinde yap (gönderenin numarası dahil)
-      if (isIlan(finalText)) {
+      const _hasTel  = containsPhone(finalText);
+      const _hasCity = containsCity(finalText);
+      const _blacklisted = isBlacklisted(finalText);
+
+      if (!_blacklisted && _hasTel && _hasCity) {
         const cities    = extractCities(finalText);
         const linePairs = extractLinePairs(finalText);
         const timestamp = msg.timestamp * 1000;
@@ -637,6 +652,10 @@ function botOlustur(clientId, isim) {
         });
         console.log(`💾 [${clientId}] ${chat.name} | ${cities.join(', ')}`);
         if (isSamsunIlani(body)) samsunBildirimiGonder(client, { text: finalText, chatName: chat.name || 'Grup', timestamp });
+      } else if (chat.isGroup) {
+        // Debug: neden ilan değil? (her grup mesajı loglanır, tanı için)
+        const sebep = _blacklisted ? 'kara-liste' : (!_hasTel ? 'telefon-yok' : 'sehir-yok');
+        console.log(`⏭️  [${clientId}] ${chat.name} [${sebep}]: ${body.slice(0, 60).replace(/\n/g,' ')}`);
       }
     } catch (e) { console.error(`❌ [${clientId}]`, e.message); }
   });
