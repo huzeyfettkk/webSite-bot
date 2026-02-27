@@ -10,12 +10,12 @@ const path     = require('path');
 // Logger (varsa kullan)
 let logger = null;
 try {
-  logger = require('./bot-logger');
+  logger = require('../utils/bot-logger');
 } catch (e) {
   // bot-logger bulunamadı, sessizce devam et
 }
 
-const DB_PATH = path.join(__dirname, 'yuklegit.db');
+const DB_PATH = path.join(__dirname, '../../yuklegit.db');
 const db      = new Database(DB_PATH);
 
 // ── Performans ayarları ─────────────────────────
@@ -124,7 +124,7 @@ function ilanEkle({ hash, text, cities, chatName, chatId, senderPhone, timestamp
       senderPhone: String(senderPhone || ''),
       timestamp:   Number(timestamp) || Date.now(),
     });
-    
+
     if (logger && result.changes > 0) {
       logger.success('ILAN_SAVE', 'İlan başarıyla kaydedildi', {
         hash: hash,

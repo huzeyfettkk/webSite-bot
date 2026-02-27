@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const logsDir = path.join(__dirname, 'logs');
+const logsDir = path.join(__dirname, '../../logs');
 
 // logs klasörünü oluştur
 if (!fs.existsSync(logsDir)) {

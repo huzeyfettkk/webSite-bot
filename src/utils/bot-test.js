@@ -2,7 +2,7 @@
 
 /**
  * Bot Test Makinesi
- * 
+ *
  * Kullanım:
  * node bot-test.js          = Tüm testleri çalıştır
  * node bot-test.js quick    = Hızlı testler (veritabanı, logger)
@@ -59,16 +59,16 @@ function summary() {
   console.log(`\n${colors.CYAN}${'═'.repeat(60)}${colors.RESET}`);
   console.log(`${colors.CYAN}📊 TEST ÖZETI${colors.RESET}`);
   console.log(`${colors.CYAN}${'═'.repeat(60)}${colors.RESET}\n`);
-  
+
   const total = passCount + failCount;
   const percentage = total > 0 ? Math.round((passCount / total) * 100) : 0;
   const statusColor = failCount === 0 ? colors.GREEN : colors.YELLOW;
-  
+
   console.log(`${colors.GREEN}✅ Başarılı${colors.RESET}: ${passCount}`);
   console.log(`${colors.RED}❌ Başarısız${colors.RESET}: ${failCount}`);
   console.log(`📊 Toplam   : ${total}`);
   console.log(`📈 Başarı Oranı: ${statusColor}${percentage}%${colors.RESET}\n`);
-  
+
   if (failCount === 0) {
     console.log(`${colors.GREEN}🎉 TÜM TESTLER BAŞARILI!${colors.RESET}\n`);
   } else {
@@ -81,18 +81,18 @@ function summary() {
  */
 function testLogger() {
   section('LOGGER MODÜLÜ TESTLERİ');
-  
+
   try {
     const logger = require('./bot-logger');
     pass('Logger modülü yüklendi');
-    
+
     // Logger metotlarını kontrol et
     const methods = [
       'success', 'info', 'warn', 'error', 'debug',
       'botStart', 'dbCheck', 'whatsappClient', 'messageReceived',
       'ilanSearch', 'getErrorReport', 'getSuccessReport'
     ];
-    
+
     methods.forEach(method => {
       if (typeof logger[method] === 'function') {
         pass(`Logger.${method}() metodu var`);
@@ -100,11 +100,11 @@ function testLogger() {
         fail(`Logger.${method}() metodu yok`);
       }
     });
-    
+
     // Test log yazma
     logger.info('TEST', 'Test log girişi yazılıyor', { test: true });
     pass('Test log girişi yazıldı');
-    
+
   } catch (e) {
     fail('Logger yükleme başarısız', e.message);
   }
@@ -115,18 +115,18 @@ function testLogger() {
  */
 function testDatabase() {
   section('VERİTABANI MODÜLÜ TESTLERİ');
-  
+
   try {
-    const db = require('./db');
+    const db = require('../database/db');
     pass('Veritabanı modülü yüklendi');
-    
+
     // Export edilen fonksiyonları kontrol et
     const functions = [
       'ilanEkle', 'ilanAra', 'ilanTemizle', 'ilanSayisi',
       'kullaniciBul', 'kullaniciEkle',
       'botEkle', 'botGuncelle', 'botBul', 'tumBotlar'
     ];
-    
+
     functions.forEach(fn => {
       if (typeof db[fn] === 'function') {
         pass(`db.${fn}() fonksiyonu var`);
@@ -134,7 +134,7 @@ function testDatabase() {
         fail(`db.${fn}() fonksiyonu yok`);
       }
     });
-    
+
     // Test: İlan ekle
     try {
       db.ilanEkle({
@@ -150,7 +150,7 @@ function testDatabase() {
     } catch (e) {
       fail('Test ilanı eklenemedi', e.message);
     }
-    
+
     // Test: İlan ara
     try {
       const results = db.ilanAra('Istanbul', 'Ankara');
@@ -158,7 +158,7 @@ function testDatabase() {
     } catch (e) {
       fail('İlan araması başarısız', e.message);
     }
-    
+
     // Test: İlan sayısı
     try {
       const count = db.ilanSayisi();
@@ -166,7 +166,7 @@ function testDatabase() {
     } catch (e) {
       fail('İlan sayısı hesaplama başarısız', e.message);
     }
-    
+
     // Test: Bot ekle
     try {
       db.botEkle({ isim: 'Test Bot', clientId: 'test-client-' + Date.now() });
@@ -174,7 +174,7 @@ function testDatabase() {
     } catch (e) {
       fail('Test bot eklenemedi', e.message);
     }
-    
+
   } catch (e) {
     fail('Veritabanı modülü yükleme başarısız', e.message);
   }
@@ -185,17 +185,17 @@ function testDatabase() {
  */
 function testFileStructure() {
   section('DOSYA YAPISI TESTLERİ');
-  
+
   const files = [
-    'index.js',
-    'db.js',
-    'bot-logger.js',
-    'bot-diagnostics.js',
-    'BOT_LOGGING_GUIDE.md',
-    'package.json',
-    'server.js'
+    '../../src/bot/index.js',
+    '../../src/database/db.js',
+    '../../src/utils/bot-logger.js',
+    '../../src/utils/bot-diagnostics.js',
+    '../../BOT_LOGGING_GUIDE.md',
+    '../../package.json',
+    '../../src/web/server.js'
   ];
-  
+
   files.forEach(file => {
     const filePath = path.join(__dirname, file);
     if (fs.existsSync(filePath)) {
@@ -205,12 +205,12 @@ function testFileStructure() {
       fail(`${file} yok`);
     }
   });
-  
+
   // Log dizini kontrol et
-  const logsDir = path.join(__dirname, 'logs');
+  const logsDir = path.join(__dirname, '../../logs');
   if (fs.existsSync(logsDir)) {
-    const files = fs.readdirSync(logsDir);
-    pass(`logs/ dizini var (${files.length} dosya)`);
+    const logFiles = fs.readdirSync(logsDir);
+    pass(`logs/ dizini var (${logFiles.length} dosya)`);
   } else {
     console.log(`${colors.YELLOW}⚠️  logs/ dizini bulunamadı (bot çalışmadan oluşturulacak)${colors.RESET}`);
   }
@@ -221,46 +221,46 @@ function testFileStructure() {
  */
 function testIndexFile() {
   section('İNDEKS DOSYASI KONTROL');
-  
+
   try {
-    const indexPath = path.join(__dirname, 'index.js');
+    const indexPath = path.join(__dirname, '../../src/bot/index.js');
     const content = fs.readFileSync(indexPath, 'utf8');
-    
+
     // Logger import kontrolü
-    if (content.includes("require('./bot-logger')")) {
+    if (content.includes("require('../utils/bot-logger')")) {
       pass('Logger import\'u var');
     } else {
       fail('Logger import\'u yok');
     }
-    
+
     // Logger.botStart() kontrolü
     if (content.includes('logger.botStart')) {
       pass('logger.botStart() çağrısı var');
     } else {
       fail('logger.botStart() çağrısı yok');
     }
-    
+
     // MESSAGE_RECEIVED logging kontrolü
     if (content.includes('logger.messageReceived')) {
       pass('Mesaj alımı logging\'i var');
     } else {
       fail('Mesaj alımı logging\'i yok');
     }
-    
+
     // ILAN_SAVE logging kontrolü
     if (content.includes('logger.success') && content.includes('ILAN_SAVE')) {
       pass('İlan kaydetme logging\'i var');
     } else {
       fail('İlan kaydetme logging\'i yok');
     }
-    
+
     // Error handler logging kontrolü
     if (content.includes('logger.error') || content.includes('process.on')) {
       pass('Error handler logging\'i var');
     } else {
       fail('Error handler logging\'i yok');
     }
-    
+
   } catch (e) {
     fail('İndeks dosyası okunamadı', e.message);
   }
@@ -271,11 +271,11 @@ function testIndexFile() {
  */
 function testConfiguration() {
   section('YAPILANDIRMA KONTROL');
-  
+
   try {
-    const packagePath = path.join(__dirname, 'package.json');
+    const packagePath = path.join(__dirname, '../../package.json');
     const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
-    
+
     // Gerekli dependencies kontrol
     const requiredDeps = [
       'whatsapp-web.js',
@@ -283,7 +283,7 @@ function testConfiguration() {
       'express',
       'dotenv'
     ];
-    
+
     requiredDeps.forEach(dep => {
       if (pkg.dependencies && pkg.dependencies[dep]) {
         pass(`Dependency: ${dep} (${pkg.dependencies[dep]})`);
@@ -291,15 +291,15 @@ function testConfiguration() {
         fail(`Dependency eksik: ${dep}`);
       }
     });
-    
+
     // .env dosyası kontrol
-    const envPath = path.join(__dirname, '.env');
+    const envPath = path.join(__dirname, '../../.env');
     if (fs.existsSync(envPath)) {
       pass('.env dosyası var');
     } else {
       console.log(`${colors.YELLOW}ℹ️  .env dosyası bulunamadı (gerekli olabilir)${colors.RESET}`);
     }
-    
+
   } catch (e) {
     fail('Konfigürasyon okunamadı', e.message);
   }
@@ -311,27 +311,27 @@ function testConfiguration() {
 async function main() {
   const args = process.argv.slice(2);
   const testType = args[0] || 'all';
-  
+
   console.log(`\n${colors.CYAN}╔═════════════════════════════════════════╗${colors.RESET}`);
   console.log(`${colors.CYAN}║${colors.RESET}      BOT TEST MAKINESI - BAŞLADI      ${colors.CYAN}║${colors.RESET}`);
   console.log(`${colors.CYAN}╚═════════════════════════════════════════╝${colors.RESET}`);
-  
+
   switch (testType.toLowerCase()) {
     case 'logger':
       testLogger();
       break;
-    
+
     case 'db':
     case 'database':
       testDatabase();
       break;
-    
+
     case 'quick':
       testLogger();
       testDatabase();
       testFileStructure();
       break;
-    
+
     case 'all':
     default:
       testFileStructure();
@@ -341,9 +341,9 @@ async function main() {
       testDatabase();
       break;
   }
-  
+
   summary();
-  
+
   // Exit kodu
   process.exit(failCount > 0 ? 1 : 0);
 }

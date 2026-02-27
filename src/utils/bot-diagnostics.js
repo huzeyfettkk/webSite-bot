@@ -2,7 +2,7 @@
 
 /**
  * Bot Diagnostics - Hata Log Kontrol Aracı
- * 
+ *
  * Kullanım:
  * node bot-diagnostics.js         // Bugünün loglarını göster
  * node bot-diagnostics.js ERROR   // Sadece hataları göster
@@ -13,7 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
-const logsDir = path.join(__dirname, 'logs');
+const logsDir = path.join(__dirname, '../../logs');
 const colors = {
   RESET: '\x1b[0m',
   RED: '\x1b[31m',

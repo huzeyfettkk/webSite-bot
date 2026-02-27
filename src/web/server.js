@@ -5,7 +5,7 @@ require('dotenv').config();
 
 const express        = require('express');
 const https          = require('https');
-const { getIlVeIlceleri, getIlBilgisi, IL_ILCE } = require('./il_ilce');
+const { getIlVeIlceleri, getIlBilgisi, IL_ILCE } = require('../config/il_ilce');
 const jwt            = require('jsonwebtoken');
 const bcrypt         = require('bcryptjs');
 const path           = require('path');
@@ -21,7 +21,7 @@ const {
   tumKullanicilar, kullaniciSil,
   logEkle, loglariGetir,
   botEkle, botGuncelle, botSil, tumBotlar, botBul,
-} = require('./db');
+} = require('../database/db');
 
 const app    = express();
 const PORT   = process.env.PORT || 3000;
@@ -62,7 +62,7 @@ async function sendResetMail(email, username, token) {
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, '../../public')));
 app.use(session({ secret: SECRET, resave: false, saveUninitialized: false }));
 app.use(passport.initialize());
 app.use(passport.session());
@@ -461,7 +461,7 @@ app.get('/api/ilanlar', authMiddleware, (req, res) => {
     const ilanlarWithSeq = [...hashMap.values()].map(ilan => {
       const normStr = s => normS(s);
       const normText = normStr(ilan.text);
-      
+
       const nList1 = ilceler1.map(s => normStr(s)).filter(Boolean);
       const nList2 = ilceler2.map(s => normStr(s)).filter(Boolean);
 
@@ -517,8 +517,8 @@ app.get('/api/ilanlar', authMiddleware, (req, res) => {
 
   // Arama yoksa tüm ilanlar (en yeniler önce)
   const rows = ilanAra(null, null);
-  const ilanlar = rows.map(r => ({ 
-    ...r, 
+  const ilanlar = rows.map(r => ({
+    ...r,
     cities: (() => { try { return JSON.parse(r.cities); } catch { return []; } })(),
     ilanNereden: null,
     ilanNereye: null
@@ -618,7 +618,7 @@ app.delete('/api/bots/:clientId', authMiddleware, adminMiddleware, async (req, r
   // Session klasörünü de sil
   const path = require('path');
   const fs   = require('fs');
-  const dir  = path.join(__dirname, '.wwebjs_auth', 'session-' + clientId);
+  const dir  = path.join(__dirname, '../../.wwebjs_auth', 'session-' + clientId);
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   logEkle({ userId: req.user.id, action: 'bot_sil', detail: clientId, ipAddress: '' });
   res.json({ ok: true });

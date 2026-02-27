@@ -4,10 +4,10 @@ require('dotenv').config();
  * whatsapp-web.js kullanarak yazılmıştır.
  */
 
-const logger = require('./bot-logger');
+const logger = require('../utils/bot-logger');
 const { Client, LocalAuth } = require('whatsapp-web.js');
-const { startServer } = require('./server');
-const { ilanEkle }    = require('./db');
+const { startServer } = require('../web/server');
+const { ilanEkle }    = require('../database/db');
 const qrcode          = require('qrcode-terminal');
 const fs              = require('fs');
 const path            = require('path');
@@ -17,7 +17,7 @@ logger.botStart();
 
 // ── Session klasörleri oluştur ─────────────────────────
 // Her bot kendi session dosyasını depolar — çakışma yok
-const SESSIONS_DIR = path.join(__dirname, '.wwebjs_sessions');
+const SESSIONS_DIR = path.join(__dirname, '../../.wwebjs_sessions');
 if (!fs.existsSync(SESSIONS_DIR)) {
   try {
     fs.mkdirSync(SESSIONS_DIR, { recursive: true, mode: 0o755 });
@@ -348,22 +348,6 @@ function isSamsunIlani(text) {
   return SAMSUN_ILCELERI.some(ilce => norm.includes(' ' + normalize(ilce) + ' '));
 }
 
-async function samsunBildirimiGonder(ilan) {
-  try {
-    const hash = contentHash(ilan.text);
-    if (_samsunGonderildi.has(hash)) return;
-    _samsunGonderildi.add(hash);
-    setTimeout(() => _samsunGonderildi.delete(hash), 60 * 60 * 1000);
-    const hedefNumara = '905015303028@c.us';
-    const chat = await client.getChatById(hedefNumara);
-    const mesaj = '🔔 *YENİ SAMSUN İLANI*\n──────────────────────\n📍 *Grup:* ' + ilan.chatName + '\n⏱ ' + timeAgo(ilan.timestamp) + '\n\n' + ilan.text.trim();
-    await chat.sendMessage(mesaj);
-    console.log('🔔 Samsun bildirimi gönderildi → +90 501 530 30 28');
-  } catch (err) {
-    console.warn('⚠️ Samsun bildirimi gönderilemedi:', err.message);
-  }
-}
-
 // ── İlan Deposu ────────────────────────────────
 class IlanStore {
   constructor() {
@@ -463,7 +447,7 @@ class IlanStore {
 
 // ── Multi-Bot Manager ─────────────────────────
 // (Client, LocalAuth zaten yukarıda require edildi)
-const { botEkle, botGuncelle, botSil, tumBotlar } = require('./db');
+const { botEkle, botGuncelle, botSil, tumBotlar } = require('../database/db');
 
 const store = new IlanStore();
 
@@ -502,7 +486,7 @@ function temizleLock(clientId) {
   const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
   const dirs = [
     path.join(SESSIONS_DIR, `bot_${clientId}`, `session-${clientId}`), // ← doğru yol
-    path.join(__dirname, '.wwebjs_auth', 'session-' + clientId),        // ← eski/alternatif
+    path.join(__dirname, '../../.wwebjs_auth', 'session-' + clientId),        // ← eski/alternatif
   ];
   for (const dir of dirs) {
     for (const f of lockFiles) {
@@ -541,7 +525,7 @@ function botOlustur(clientId, isim) {
 
   // ── Her bot için ayrı session klasörü ─────────────────────────
   const botSessionDir = path.join(SESSIONS_DIR, `bot_${clientId}`);
-  
+
   // Klasörü oluştur (varsa sessioni kurtarır)
   try {
     if (!fs.existsSync(botSessionDir)) {
@@ -564,10 +548,10 @@ function botOlustur(clientId, isim) {
     puppeteer: puppeteerOpts(),
   });
 
-  const bot = { 
-    client, clientId, isim, 
-    durum: 'baslatiliyor', 
-    qrData: null, 
+  const bot = {
+    client, clientId, isim,
+    durum: 'baslatiliyor',
+    qrData: null,
     _watchdog: null,
     _authHandled: false,  // ← Duplicate authenticated olayını prevent et
     _qrAttempts: 0,       // ← QR deneme sayısı (session corruption detect etmek için)
@@ -614,7 +598,7 @@ function botOlustur(clientId, isim) {
     try { await bot.client.destroy(); } catch {}
     botManager.delete(clientId);
     setTimeout(async () => {
-      const dbBot = require('./db').botBul(clientId);
+      const dbBot = require('../database/db').botBul(clientId);
       if (dbBot) {
         logger.info('BOT_RESTART', 'Auth hatası sonrası bot yeniden başlatılıyor', { clientId });
         botOlustur(clientId, dbBot.isim);
@@ -629,7 +613,7 @@ function botOlustur(clientId, isim) {
       return;  // ← Sadece BİR sefer işlem yap
     }
     bot._authHandled = true;
-    
+
     bot.durum  = 'dogrulandi';
     bot.qrData = null;
     botGuncelle(clientId, { durum: 'dogrulandi' });
@@ -675,7 +659,7 @@ function botOlustur(clientId, isim) {
           botManager.delete(clientId);
 
           setTimeout(async () => {
-            const dbBot = require('./db').botBul(clientId);
+            const dbBot = require('../database/db').botBul(clientId);
             if (dbBot) botOlustur(clientId, dbBot.isim);
           }, 3_000);
         }, 15_000);
@@ -713,7 +697,7 @@ function botOlustur(clientId, isim) {
           botManager.delete(clientId);
 
           setTimeout(async () => {
-            const dbBot = require('./db').botBul(clientId);
+            const dbBot = require('../database/db').botBul(clientId);
             if (dbBot) {
               logger.info('HEARTBEAT_RECONNECT', 'Heartbeat fail sonrası reconnect', {
                 clientId, isim: dbBot.isim,
@@ -751,7 +735,7 @@ function botOlustur(clientId, isim) {
         try {
           logger.info('CHANNEL_MESSAGE', `Kanal mesajı alındı`, { channel: chat.name || msg.from, text: body.slice(0, 50) });
           console.log(`📡 [${clientId}] KANAL MESAJI: ${chat.name || msg.from}`);
-          
+
           if (isIlan(body)) {
             try {
               const cities    = extractCities(body);
@@ -760,14 +744,14 @@ function botOlustur(clientId, isim) {
               const hash      = contentHash(body);
               const kanalAdi  = chat.name || msg.from || 'Kanal';
               store.add(msg.from + '_' + msg.id.id, { text: body, cities, linePairs, chatName: kanalAdi, chatId: msg.from, senderName: kanalAdi, timestamp });
-              
+
               try {
                 ilanEkle({ hash: String(hash), text: body, cities, chatName: kanalAdi, chatId: msg.from, senderPhone: '', timestamp });
                 logger.success('ILAN_SAVE', `İlan başarıyla kaydedildi`, { channel: kanalAdi, cities: cities.join(', '), textLength: body.length });
               } catch (dbErr) {
                 logger.error('ILAN_SAVE', `İlan veritabanına kaydedilemedi`, dbErr, { channel: kanalAdi });
               }
-              
+
               console.log(`💾 [${clientId}] 📡 Kanal: ${kanalAdi} | ${cities.join(', ')}`);
             } catch (parseErr) {
               logger.error('ILAN_PARSE', `İlan parse/işlem hatası`, parseErr, { channel: chat.name });
@@ -800,7 +784,7 @@ function botOlustur(clientId, isim) {
         // Şehir araması değilse → karşılama mesajı gönder
         if (!sehirler.length) {
           logger.warn('CITY_EXTRACTION', `Mesajda şehir bulunamadı`, { from: msg.from, text: msgText });
-          
+
           const karsilama =
             '👋 *Merhaba! YükleGit Destek Hattına hoş geldiniz.*\n\n' +
             '🚛 *Ne yapabilirim?*\n' +
@@ -810,7 +794,7 @@ function botOlustur(clientId, isim) {
             'Sadece şehir adını veya "şehir1 şehir2" şeklinde yazın.\n\n' +
             '🌐 *Web paneli:* https://yuklegit.tr\n\n' +
             '_Teknik destek için mesajınızı bırakın, en kısa sürede dönüş yapılacaktır._';
-          
+
           try {
             await msg.reply(karsilama);
             logger.messageSent(msg.from, 1, true);
@@ -819,17 +803,17 @@ function botOlustur(clientId, isim) {
           }
           return;
         }
-        
+
         const [city1, city2] = sehirler;
         logger.cityCheck(city1, true, city1);
         if (city2) logger.cityCheck(city2, true, city2);
-        
+
         try {
           const startTime = Date.now();
           const results = store.search(city1, city2 || null);
           const duration = Date.now() - startTime;
           logger.ilanSearch(city1, city2 || '-', results.length, duration);
-          
+
           const baslik = city2 ? `🔍 *${city1.toUpperCase()} → ${city2.toUpperCase()}*`
                                 : `🔍 *${city1.toUpperCase()}*`;
           if (!results.length) {
@@ -928,7 +912,7 @@ function botOlustur(clientId, isim) {
     // - CONNECTION_ERROR: İnternet kesildi → Normal reconnect
     const isLogout = String(reason).toUpperCase() === 'LOGOUT';
     let bekleme;
-    
+
     if (isMultiSessionKickout) {
       bekleme = 3_000;  // ← 3 saniye (telefondan işlem yapılırken en hızlı reconnect)
       console.log(`📲 [${clientId}] Multi-session kickout detected! Hızlı reconnect: 3 saniye`);
@@ -954,23 +938,23 @@ function botOlustur(clientId, isim) {
 
     setTimeout(async () => {
       if (!botManager.has(clientId)) return;
-      
+
       // ─── Browser cleanup (Puppeteer crash'lerini önlemek için) ───
       try {
         if (bot.client && bot.client.pupBrowser) {
           await bot.client.pupBrowser.close().catch(() => {});
         }
       } catch (e) {}
-      
-      try { 
-        await bot.client.destroy(); 
+
+      try {
+        await bot.client.destroy();
       } catch (e) {}
-      
+
       botManager.delete(clientId);
-      
+
       // ─── Biraz daha bekle ki Puppeteer process kapanışı tamamlansın ───
       setTimeout(async () => {
-        const dbBot = require('./db').botBul(clientId);
+        const dbBot = require('../database/db').botBul(clientId);
         if (dbBot) {
           logger.info('BOT_RECONNECT', `Bot yeniden başlatılıyor`, {
             clientId,
@@ -1000,7 +984,7 @@ function botOlustur(clientId, isim) {
 
       // Kısa bekleme sonrası temiz restart
       setTimeout(async () => {
-        const dbBot = require('./db').botBul(clientId);
+        const dbBot = require('../database/db').botBul(clientId);
         if (dbBot) {
           logger.info('BOT_INIT_RETRY', 'Lock temizlendi, bot yeniden başlatılıyor', { clientId });
           botOlustur(clientId, dbBot.isim);
@@ -1020,7 +1004,7 @@ async function botDurdur(clientId) {
   const bot = botManager.get(clientId);
   if (!bot) return;
   if (bot._watchdog) { clearInterval(bot._watchdog); bot._watchdog = null; }
-  
+
   // Browser'ı force close et (Puppeteer crash'leri önlemek için)
   try {
     if (bot.client && bot.client.pupBrowser) {
@@ -1029,14 +1013,14 @@ async function botDurdur(clientId) {
   } catch (e) {
     logger.debug('BOT_SHUTDOWN', 'Browser kapatma hatası', { clientId, error: String(e) });
   }
-  
+
   // Client'ı destroy et
-  try { 
-    await bot.client.destroy(); 
+  try {
+    await bot.client.destroy();
   } catch (e) {
     logger.debug('BOT_SHUTDOWN', 'Client destroy hatası', { clientId, error: String(e) });
   }
-  
+
   temizleLock(clientId);
   botManager.delete(clientId);
 }
@@ -1084,13 +1068,13 @@ async function samsunBildirimiGonder(senderClient, ilan) {
 // ── Başlangıç: DB'deki tüm botları başlat ──────
 function mevcutBotlariBaslat() {
   logger.info('STARTUP', 'Kayıtlı botlar yükleniyor...', {});
-  
+
   const dbBotlar = tumBotlar();
   if (dbBotlar.length === 0) {
     logger.warn('STARTUP', 'Kayıtlı bot bulunamadı', { count: 0 });
-    
+
     // Geriye dönük uyumluluk: eski tek bot varsa otomatik ekle
-    const eskiSessionVar = fs.existsSync(path.join(__dirname, '.wwebjs_auth', 'session-lojistik-bot'));
+    const eskiSessionVar = fs.existsSync(path.join(__dirname, '../../.wwebjs_auth', 'session-lojistik-bot'));
     if (eskiSessionVar) {
       logger.info('STARTUP', 'Eski oturum bulundu, otomatik ekleniyor', { clientId: 'lojistik-bot' });
       botEkle({ isim: 'Ana Bot', clientId: 'lojistik-bot' });
@@ -1102,9 +1086,9 @@ function mevcutBotlariBaslat() {
     }
     return;
   }
-  
+
   logger.success('STARTUP', `${dbBotlar.length} bot bulundu, başlatılıyor`, { botCount: dbBotlar.length, bots: dbBotlar.map(b => b.isim) });
-  
+
   dbBotlar.forEach(bot => {
     logger.info('STARTUP', `Bot başlatılacak: "${bot.isim}"`, { clientId: bot.clientId });
     console.log(`🤖 [${bot.clientId}] "${bot.isim}" başlatılıyor...`);
@@ -1129,9 +1113,9 @@ async function gracefulShutdown(signal) {
   _kapaniyor = true;
   logger.info('SHUTDOWN', `Shutdown sinyali alındı: ${signal}`, { signal });
   console.log(`\n🛑 ${signal} alındı, kapatılıyor...`);
-  for (const [clientId] of botManager) { 
+  for (const [clientId] of botManager) {
     logger.info('SHUTDOWN', `Bot kapatılıyor`, { clientId });
-    await botDurdur(clientId); 
+    await botDurdur(clientId);
   }
   logger.success('SHUTDOWN', 'Sistem başarıyla kapatıldı', {});
   process.exit(0);
@@ -1139,30 +1123,35 @@ async function gracefulShutdown(signal) {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
 
-// Web panelini başlat
-logger.info('SERVER', 'HTTP Server başlatılıyor...', {});
-try {
-  startServer(store, CONFIG, botManager, botOlustur, botDurdur, qrWaiters);
-  logger.success('SERVER', 'HTTP Server başarıyla başlatıldı', {});
-} catch (err) {
-  logger.error('SERVER', 'HTTP Server başlatılamadı', err, {});
+function startBot() {
+  // Web panelini başlat
+  logger.info('SERVER', 'HTTP Server başlatılıyor...', {});
+  try {
+    startServer(store, CONFIG, botManager, botOlustur, botDurdur, qrWaiters);
+    logger.success('SERVER', 'HTTP Server başarıyla başlatıldı', {});
+  } catch (err) {
+    logger.error('SERVER', 'HTTP Server başlatılamadı', err, {});
+  }
+
+  logger.info('STARTUP', 'WhatsApp Botlarının başlatılması başlıyor...', {});
+  mevcutBotlariBaslat();
+
+  // Log raporu yazdır
+  setTimeout(() => {
+    const report = logger.getErrorReport();
+    if (report.hataCount > 0 || report.uyariCount > 0) {
+      console.log('\n' + '═'.repeat(50));
+      console.log('📊 BAŞLATMA ÖZETİ');
+      console.log('═'.repeat(50));
+      console.log(`✅ Başarılı işlemler: ${logger.getSuccessReport().basariCount}`);
+      console.log(`⚠️  Uyarılar: ${report.uyariCount}`);
+      console.log(`❌ Hatalar: ${report.hataCount}`);
+      console.log(`📄 Log dosyası: ${report.logFile}`);
+      console.log('═'.repeat(50) + '\n');
+    }
+  }, 5000);
 }
 
-logger.info('STARTUP', 'WhatsApp Botlarının başlatılması başlıyor...', {});
-mevcutBotlariBaslat();
+if (require.main === module) { startBot(); }
 
-// Log raporu yazdır
-setTimeout(() => {
-  const report = logger.getErrorReport();
-  if (report.hataCount > 0 || report.uyariCount > 0) {
-    console.log('\n' + '═'.repeat(50));
-    console.log('📊 BAŞLATMA ÖZETİ');
-    console.log('═'.repeat(50));
-    console.log(`✅ Başarılı işlemler: ${logger.getSuccessReport().basariCount}`);
-    console.log(`⚠️  Uyarılar: ${report.uyariCount}`);
-    console.log(`❌ Hatalar: ${report.hataCount}`);
-    console.log(`📄 Log dosyası: ${report.logFile}`);
-    console.log('═'.repeat(50) + '\n');
-  }
-}, 5000);
-
+module.exports = { startBot, botOlustur, botDurdur, botManager };

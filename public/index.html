@@ -291,6 +291,14 @@ tr:hover td{background:#f8faff}
 /* Tel linki */
 .telLink{color:#16a34a;font-weight:700;text-decoration:none;white-space:nowrap;background:#f0fdf4;padding:1px 6px;border-radius:4px;border:1px solid #bbf7d0}
 .telLink:hover{background:#dcfce7;text-decoration:underline}
+.telGrup{display:inline-block;margin:2px 0;width:100%}
+.telMasked{display:block;color:#16a34a;font-weight:700;font-size:14px;margin-bottom:6px;letter-spacing:.3px}
+.telBtnRow{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.telBtn{display:inline-flex;align-items:center;gap:5px;padding:8px 16px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;min-height:42px;transition:opacity .15s;white-space:nowrap}
+.telBtnAra{background:var(--accent);color:#fff}
+.telBtnAra:hover{opacity:.85}
+.telBtnWa{background:#25D366;color:#fff}
+.telBtnWa:hover{opacity:.85}
 
 /* İlan oluştur */
 .ilanForm{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);margin-bottom:20px}
@@ -1095,6 +1103,12 @@ function renderSatirlar(text, matchedTerms, ilceler1, ilceler2){
   return `<div class="ilanText ilanTextSatir">${parcalar.join('\n')}</div>`;
 }
 
+function maskeTelefon(numStr) {
+  const digits = String(numStr).replace(/\D/g, '');
+  const local = '0' + digits.slice(-10); // "05321234567"
+  return local.slice(0, 4) + ' *** ** ' + local.slice(-2);
+}
+
 function hlText(text, terms){
   // 1. Metni parçalara böl: tel numaraları ayrı, gerisi ayrı
   // Desteklenen formatlar:
@@ -1139,10 +1153,16 @@ function hlText(text, terms){
   // 4. Birleştir
   return parcalar.map(p => {
     if (p.type === 'tel') {
-      // Boşluk/tire gibi ayraçları soy, her zaman +90XXXXXXXXXX formatına getir
-      const digits = p.val.replace(/\D/g, ''); // sadece rakamlar
-      const intl = '+90' + digits.slice(-10);  // son 10 rakam = operatör + abone
-      return '<a href="tel:'+intl+'" class="telLink">'+esc(p.val)+'</a>';
+      const digits = p.val.replace(/\D/g, '');
+      const intl = '+90' + digits.slice(-10);
+      const wa = '90' + digits.slice(-10);
+      const masked = maskeTelefon(p.val);
+      return '<span class="telGrup">' +
+        '<span class="telMasked">📞 ' + esc(masked) + '</span>' +
+        '<span class="telBtnRow">' +
+        '<a href="tel:' + intl + '" class="telBtn telBtnAra">📞 Hemen Ara</a>' +
+        '<a href="https://wa.me/' + wa + '" class="telBtn telBtnWa" target="_blank" rel="noopener">🟢 WhatsApp\'tan Yaz</a>' +
+        '</span></span>';
     }
     return highlightText(p.val);
   }).join('');

@@ -55,7 +55,6 @@ const IL_ILCE = {
   'kırıkkale':      ['bahşili','balışeyh','çelebi','delice','karakeçili','keskin','sulakyurt','yahşihan'],
   'kırklareli':     ['babaeski','demirköy','kofçaz','lüleburgaz','pehlivanköy','pınarhisar','vize'],
   'kırşehir':       ['akçakent','akpınar','boztepe','çiçekdağı','kaman','mucur'],
-  'kilis':          ['elbeyli','musabeyli','polateli'],
   'kocaeli':        ['başiskele','çayırova','darıca','derince','dilovası','gebze','gölcük','izmit','kandıra','karamürsel','kartepe','körfez'],
   'konya':          ['karatay','meram','selçuklu','ahırlı','akören','akşehir','altınekin','beyşehir','bozkır','cihanbeyli','çeltik','çumra','derbent','derebucak','doğanhisar','emirgazi','ereğli','güneysınır','hadim','halkapınar','hüyük','ilgın','kadınhanı','karapınar','kulu','sarayönü','seydişehir','taşkent','tuzlukçu','yalıhüyük','yunak'],
   'kütahya':        ['altıntaş','aslanapa','çavdarhisar','domaniç','dumlupınar','emet','gediz','hisarcık','pazarlar','şaphane','simav','tavşanlı'],
