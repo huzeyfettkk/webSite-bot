@@ -459,7 +459,6 @@ class IlanStore {
 // ── Multi-Bot Manager ─────────────────────────
 // (Client, LocalAuth zaten yukarıda require edildi)
 const { botEkle, botGuncelle, botSil, tumBotlar } = require('./db');
-const path = require('path');
 const fs   = require('fs');
 
 const store = new IlanStore();
