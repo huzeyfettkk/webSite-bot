@@ -648,84 +648,77 @@ function botOlustur(clientId, isim) {
     console.log(`🤖 [${clientId}] Hazır!`);
 
     // ── Puppeteer tarayıcı çöküşü yakalama ──────────────────────────
-    // Puppeteer kendi çökerse 'disconnected' eventi tetiklenmez — bunu ayrıca yakala
     try {
       client.pupBrowser.once('disconnected', () => {
         if (!botManager.has(clientId) || bot.durum !== 'hazir') return;
-        console.warn(`💥 [${clientId}] Puppeteer çöktü — 20s sonra yeniden başlatılıyor...`);
+        console.warn(`💥 [${clientId}] Puppeteer çöktü — 15s sonra yeniden başlatılıyor...`);
         logger.warn('WHATSAPP_PUPPETEER_CRASH', 'Puppeteer browser çöktü, reconnect başlıyor', { clientId });
         bot.durum = 'baglanti_kesildi';
         botGuncelle(clientId, { durum: 'baglanti_kesildi' });
         durumGonder(clientId, 'baglanti_kesildi');
         if (bot._watchdog) { clearInterval(bot._watchdog); bot._watchdog = null; }
+
         setTimeout(async () => {
-          if (!botManager.has(clientId)) return;
-          
-          // Clean browser shutdown
+          // ← Aynı bot instance'ı mı? Değilse heartbeat zaten restart etti, dur.
+          if (botManager.get(clientId) !== bot) return;
+
           try {
-            if (bot.client && bot.client.pupBrowser) {
-              await bot.client.pupBrowser.close().catch(() => {});
-            }
-          } catch (ex) {}
-          
+            if (bot.client?.pupBrowser) await bot.client.pupBrowser.close().catch(() => {});
+          } catch {}
           try { await bot.client.destroy(); } catch {}
           botManager.delete(clientId);
-          
-          // Ek bekleme sonra restart
+
           setTimeout(async () => {
             const dbBot = require('./db').botBul(clientId);
             if (dbBot) botOlustur(clientId, dbBot.isim);
           }, 3_000);
-        }, 20_000);
+        }, 15_000);
       });
     } catch {}
 
-    // ── Heartbeat: Her 30 saniyede WhatsApp bağlantısını kontrol et ──
-    // Silent disconnect (sessiz kopma) durumunu yakalar
-    // Multi-session kickout'ları hızlıca yakalar
+    // ── Heartbeat: Her 45 saniyede bağlantıyı kontrol et ──────────────
     if (bot._watchdog) clearInterval(bot._watchdog);
     bot._watchdog = setInterval(async () => {
       if (!botManager.has(clientId)) { clearInterval(bot._watchdog); return; }
-      if (bot.durum !== 'hazir') return;
+      if (bot.durum !== 'hazir') { clearInterval(bot._watchdog); bot._watchdog = null; return; }
       try {
         const state = await client.getState();
         if (state !== 'CONNECTED') throw new Error(`durum=${state}`);
       } catch (e) {
+        // ← Async getState() bitmeden Puppeteer çökmüş olabilir; tekrar kontrol et
+        if (bot.durum !== 'hazir') {
+          clearInterval(bot._watchdog); bot._watchdog = null;
+          return; // Crash handler zaten devralıyor, çift restart yapma
+        }
         logger.error('HEARTBEAT', `Kalp atışı başarısız, bağlantı yeniden kurulacak`, e, { clientId });
-        console.warn(`💓 [${clientId}] Heartbeat başarısız (${e.message}) — 5s sonra yeniden bağlanılıyor...`);
+        console.warn(`💓 [${clientId}] Heartbeat başarısız (${e.message}) — 8s sonra yeniden bağlanılıyor...`);
         clearInterval(bot._watchdog); bot._watchdog = null;
         bot.durum = 'baglanti_kesildi';
         botGuncelle(clientId, { durum: 'baglanti_kesildi' });
         durumGonder(clientId, 'baglanti_kesildi');
-        
-        // ── Hızlı reconnect (telefondan sync sırasında disconnect) ───────
+
         setTimeout(async () => {
-          if (!botManager.has(clientId)) return;
-          
-          try { 
-            if (bot.client && bot.client.pupBrowser) {
-              await bot.client.pupBrowser.close().catch(() => {});
-            }
-          } catch (ex) {}
-          
+          if (botManager.get(clientId) !== bot) return; // Başka bir handler zaten yaptı
+
+          try {
+            if (bot.client?.pupBrowser) await bot.client.pupBrowser.close().catch(() => {});
+          } catch {}
           try { await bot.client.destroy(); } catch {}
           botManager.delete(clientId);
-          
-          // 2 saniye sonra reconnect (token hala valid olur)
+
           setTimeout(async () => {
             const dbBot = require('./db').botBul(clientId);
             if (dbBot) {
-              logger.info('HEARTBEAT_RECONNECT', 'Heartbeat fail sonrası quick reconnect', {
-                clientId,
-                isim: dbBot.isim,
+              logger.info('HEARTBEAT_RECONNECT', 'Heartbeat fail sonrası reconnect', {
+                clientId, isim: dbBot.isim,
                 originalError: String(e.message).substring(0, 100)
               });
               botOlustur(clientId, dbBot.isim);
             }
           }, 2_000);
-        }, 5_000);  // ← 5 saniye sonra reconnect (super hızlı!)
+        }, 8_000);
       }
-    }, 30_000);  // ← 30 saniyede bir kontrol (2 dakikadan 4x daha sık)
+    }, 45_000);
   });
 
   client.on('message_create', async (msg) => {
