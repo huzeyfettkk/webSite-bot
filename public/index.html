@@ -451,6 +451,11 @@ tr:hover td{background:#f8faff}
 <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
 
 <div id="app">
+  <div id="telefonBanner" style="display:none;background:#fffbeb;border-bottom:2px solid #fde68a;padding:10px 20px;font-size:13px;color:#92400e;text-align:center;position:sticky;top:0;z-index:100">
+    ⚠️ İlan verebilmek ve diğer kullanıcılarla iletişime geçebilmek için
+    <a href="#" onclick="showPage('profil');document.getElementById('telefonBanner').style.display='none';return false"
+       style="color:#b45309;font-weight:700;text-decoration:underline;margin-left:4px">profilinizden telefon numaranızı ekleyin →</a>
+  </div>
   <div class="sidebar" id="sidebar">
     <div class="sidebarLogo"><img src="/icon-192.png" style="width:32px;height:32px;border-radius:8px;object-fit:cover;flex-shrink:0"> YükleGit</div>
     <div class="navSection">Menü</div>
@@ -562,6 +567,14 @@ tr:hover td{background:#f8faff}
             <div class="formGroup"><label>Yeni E-posta</label><input type="email" id="newEmail" placeholder="yeni@mail.com"></div>
             <button class="btnPrimary" onclick="updateEmail()">Güncelle</button>
             <div class="profileMsg" id="emailMsg"></div>
+          </div>
+        </div>
+        <div class="profileCard">
+          <div class="profileHeader"><div class="profileTitle">📞 Telefon Güncelle</div></div>
+          <div class="profileBody">
+            <div class="formGroup"><label>Telefon Numarası</label><input type="tel" id="newPhone" placeholder="05321234567"></div>
+            <button class="btnPrimary" onclick="updatePhone()">Güncelle</button>
+            <div class="profileMsg" id="phoneMsg"></div>
           </div>
         </div>
         <div class="profileCard" style="grid-column:1/-1">
@@ -798,6 +811,19 @@ tr:hover td{background:#f8faff}
         </div>
       </div>
     </div>
+    <div id="telefonModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1001;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border-radius:16px;padding:32px;max-width:340px;width:90%;text-align:center">
+        <div style="font-size:40px;margin-bottom:12px">📞</div>
+        <div style="font-size:17px;font-weight:700;margin-bottom:8px">Telefon Numarası Gerekli</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:24px;line-height:1.6">İlan vermek için profilinizde kayıtlı bir telefon numarası olması gerekiyor.</div>
+        <div style="display:flex;gap:10px;justify-content:center">
+          <button onclick="document.getElementById('telefonModal').style.display='none'"
+            style="padding:10px 18px;border:1.5px solid var(--border);border-radius:8px;background:none;cursor:pointer;font-family:'Outfit',sans-serif;font-size:13px">Kapat</button>
+          <button onclick="document.getElementById('telefonModal').style.display='none';showPage('profil')"
+            style="padding:10px 18px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:'Outfit',sans-serif;font-size:13px;font-weight:700">Profili Güncelle</button>
+        </div>
+      </div>
+    </div>
 
   </div>
 </div>
@@ -899,6 +925,9 @@ function initApp(){
   setTimeout(loadProfilBildirim, 300);
   // Şehir önerileri için listeyi yükle
   api('/api/sehirler').then(d=>{ if(d&&d.sehirler) window._tumSehirler=d.sehirler; });
+  if (!currentUser.phone || !currentUser.phone.trim()) {
+    document.getElementById('telefonBanner').style.display = 'block';
+  }
 }
 
 function showPage(page){
@@ -907,6 +936,12 @@ function showPage(page){
     const nav=document.getElementById('nav-'+p);if(nav)nav.classList.toggle('active',p===page);
   });
   closeSidebar();
+  if(page === 'ilanver'){
+    if(!currentUser.phone || !currentUser.phone.trim()){
+      document.getElementById('telefonModal').style.display='flex';
+      return;
+    }
+  }
   if(page==='profil')loadProfil();
   if(page==='kullanicilar')loadUsers();
   if(page==='blacklist')loadBlacklist();
@@ -1447,6 +1482,7 @@ function loadProfil(){loadProfilBildirim();
   const isA=currentUser.role==='admin';
   document.getElementById('profileRole').innerHTML=`<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;background:${isA?'#eff6ff':'#f0fdf4'};color:${isA?'var(--accent)':'var(--success)'}">${isA?'Admin':'Kullanıcı'}</span>`;
   document.getElementById('newEmail').value=currentUser.email||'';
+  document.getElementById('newPhone').value=currentUser.phone||'';
 }
 async function updateEmail(){
   const email=document.getElementById('newEmail').value.trim();
@@ -1459,6 +1495,18 @@ async function updatePassword(){
   const data=await api('/api/profile',{method:'PUT',body:JSON.stringify({currentPassword,newPassword})});if(!data)return;
   if(data.ok){document.getElementById('curPass').value='';document.getElementById('newPass').value='';showMsg('passMsg','Şifre başarıyla değiştirildi!','ok');}
   else showMsg('passMsg',data.error,'err');
+}
+async function updatePhone(){
+  const phone=document.getElementById('newPhone').value.trim();
+  if(!phone){showMsg('phoneMsg','Telefon numarası boş olamaz','err');return;}
+  const data=await api('/api/profile',{method:'PUT',body:JSON.stringify({phone})});if(!data)return;
+  if(data.ok){
+    currentUser.phone=data.user?.phone||phone;
+    localStorage.setItem('yg_user',JSON.stringify(currentUser));
+    document.getElementById('telefonBanner').style.display='none';
+    showMsg('phoneMsg','Telefon numarası güncellendi!','ok');
+    loadProfil();
+  }else showMsg('phoneMsg',data.error,'err');
 }
 function showMsg(id,msg,type){const el=document.getElementById(id);el.textContent=msg;el.className='profileMsg '+type;el.style.display='block';setTimeout(()=>el.style.display='none',4000);}
 

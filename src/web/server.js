@@ -119,7 +119,7 @@ app.post('/api/login', (req, res) => {
     return res.status(403).json({ error: 'E-posta adresiniz henüz doğrulanmadı.', needsVerification: true });
 
   logEkle({ userId: user.id, action: 'login', detail: user.username, ipAddress: getIP(req) });
-  const token = jwt.sign({ id: user.id, username: user.username, email: user.email, role: user.role }, SECRET, { expiresIn: '7d' });
+  const token = jwt.sign({ id: user.id, username: user.username, email: user.email, role: user.role }, SECRET, { expiresIn: '30d' });
   res.json({ token, user: { id: user.id, username: user.username, email: user.email, role: user.role } });
 });
 
@@ -185,7 +185,7 @@ app.put('/api/profile', authMiddleware, (req, res) => {
   }
   kullaniciGuncelle(user.id, updates);
   const u = kullaniciBul(user.id);
-  res.json({ ok: true, user: { id: u.id, username: u.username, email: u.email, role: u.role } });
+  res.json({ ok: true, user: { id: u.id, username: u.username, email: u.email, role: u.role, phone: u.phone } });
 });
 
 // ── Kullanıcı Yönetimi (Admin) ──────────────────
@@ -559,6 +559,9 @@ app.post('/api/ilan-olustur', authMiddleware, (req, res) => {
   if (metin.length > 1000) return res.status(400).json({ error: 'İlan metni en fazla 1000 karakter olabilir' });
   const user = kullaniciBul(req.user.id);
   if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+  if (!user.phone || !user.phone.trim()) {
+    return res.status(403).json({ error: 'İlan verebilmek için profilinizden telefon numaranızı eklemeniz gerekiyor.' });
+  }
 
   const tamMetin = metin.trim() + (user.phone ? '\n📞 ' + user.phone : '');
   const hash = crypto.createHash('md5').update(tamMetin + Date.now()).digest('hex');
@@ -575,7 +578,7 @@ app.get('/auth/google/callback',
   (req, res) => {
     const user = req.user;
     logEkle({ userId: user.id, action: 'login', detail: 'google:' + user.username, ipAddress: getIP(req) });
-    const token = jwt.sign({ id: user.id, username: user.username, email: user.email, role: user.role }, SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, username: user.username, email: user.email, role: user.role }, SECRET, { expiresIn: '30d' });
     res.redirect(`/?google_token=${token}&user=${encodeURIComponent(JSON.stringify({ id: user.id, username: user.username, email: user.email, phone: user.phone, role: user.role, avatar: user.avatar }))}`);
   }
 );
