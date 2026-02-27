@@ -584,18 +584,31 @@ function botOlustur(clientId, isim) {
     try {
       client.pupBrowser.once('disconnected', () => {
         if (!botManager.has(clientId) || bot.durum !== 'hazir') return;
-        console.warn(`💥 [${clientId}] Puppeteer çöktü — 15s sonra yeniden başlatılıyor...`);
+        console.warn(`💥 [${clientId}] Puppeteer çöktü — 20s sonra yeniden başlatılıyor...`);
+        logger.warn('WHATSAPP_PUPPETEER_CRASH', 'Puppeteer browser çöktü, reconnect başlıyor', { clientId });
         bot.durum = 'baglanti_kesildi';
         botGuncelle(clientId, { durum: 'baglanti_kesildi' });
         durumGonder(clientId, 'baglanti_kesildi');
         if (bot._watchdog) { clearInterval(bot._watchdog); bot._watchdog = null; }
         setTimeout(async () => {
           if (!botManager.has(clientId)) return;
+          
+          // Clean browser shutdown
+          try {
+            if (bot.client && bot.client.pupBrowser) {
+              await bot.client.pupBrowser.close().catch(() => {});
+            }
+          } catch (ex) {}
+          
           try { await bot.client.destroy(); } catch {}
           botManager.delete(clientId);
-          const dbBot = require('./db').botBul(clientId);
-          if (dbBot) botOlustur(clientId, dbBot.isim);
-        }, 15_000);
+          
+          // Ek bekleme sonra restart
+          setTimeout(async () => {
+            const dbBot = require('./db').botBul(clientId);
+            if (dbBot) botOlustur(clientId, dbBot.isim);
+          }, 3_000);
+        }, 20_000);
       });
     } catch {}
 
@@ -830,19 +843,35 @@ function botOlustur(clientId, isim) {
 
     setTimeout(async () => {
       if (!botManager.has(clientId)) return;
-      try { await bot.client.destroy(); } catch {}
+      
+      // ─── Browser cleanup (Puppeteer crash'lerini önlemek için) ───
+      try {
+        if (bot.client && bot.client.pupBrowser) {
+          await bot.client.pupBrowser.close().catch(() => {});
+        }
+      } catch (e) {}
+      
+      try { 
+        await bot.client.destroy(); 
+      } catch (e) {}
+      
       botManager.delete(clientId);
-      const dbBot = require('./db').botBul(clientId);
-      if (dbBot) {
-        logger.info('BOT_RECONNECT', `Bot yeniden başlatılıyor`, {
-          clientId,
-          isim: dbBot.isim,
-          sessionWasAvailable: sessionExists
-        });
-        botOlustur(clientId, dbBot.isim);
-      } else {
-        logger.error('BOT_RECONNECT', `Bot veritabanında bulunamadı, reconnect başarısız`, new Error('Bot not found'), { clientId });
-      }
+      
+      // ─── Biraz daha bekle ki Puppeteer process kapanışı tamamlansın ───
+      setTimeout(async () => {
+        const dbBot = require('./db').botBul(clientId);
+        if (dbBot) {
+          logger.info('BOT_RECONNECT', `Bot yeniden başlatılıyor`, {
+            clientId,
+            isim: dbBot.isim,
+            sessionWasAvailable: sessionExists,
+            reconnectType: reason
+          });
+          botOlustur(clientId, dbBot.isim);
+        } else {
+          logger.error('BOT_RECONNECT', `Bot veritabanında bulunamadı, reconnect başarısız`, new Error('Bot not found'), { clientId });
+        }
+      }, 2_000);  // ← Ek 2 saniye bekleme
     }, bekleme);
   });
 
@@ -850,20 +879,56 @@ function botOlustur(clientId, isim) {
     const botSessionDir = path.join(SESSIONS_DIR, `bot_${clientId}`);
     const sessionExists = fs.existsSync(botSessionDir);
     const errorMsg = String(e.message || e);
+    
+    // "Navigating frame was detached" = temporary Puppeteer crash, retry
+    const isRetryable = errorMsg.includes('frame was detached') || 
+                       errorMsg.includes('Target closed') ||
+                       errorMsg.includes('Connection lost');
 
     logger.error('BOT_INIT', `Client başlatılamadı`, e, {
       clientId,
       sessionDir: botSessionDir,
       sessionExists,
       errorMsg: errorMsg.substring(0, 200),
+      isRetryable,
       hint: errorMsg.includes('EACCES') ? 'İZİN HATASI - Klasöre yazma izni yok!' : 
             errorMsg.includes('ENOENT') ? 'KLASÖR YOK - .wwebjs_sessions oluşturulamadı' :
-            errorMsg.includes('AUTH') ? 'OTURUM BAŞARILI - QR gerekiyor' : 'BİLİNMEYEN HATA'
+            errorMsg.includes('AUTH') ? 'OTURUM BAŞARILI - QR gerekiyor' : 
+            isRetryable ? 'Puppeteer restart - 30 saniye sonra yeniden dene' : 'BİLİNMEYEN HATA'
     });
 
     console.error(`❌ [${clientId}] initialize hatası: ${e.message}`);
     bot.durum = 'hata';
     botGuncelle(clientId, { durum: 'hata' });
+    
+    // Retryable hatalar için otomatik restart
+    if (isRetryable) {
+      console.log(`🔄 [${clientId}] 30 saniye sonra yeniden deneniyor...`);
+      setTimeout(async () => {
+        if (!botManager.has(clientId)) return;
+        
+        try {
+          if (bot.client && bot.client.pupBrowser) {
+            await bot.client.pupBrowser.close().catch(() => {});
+          }
+        } catch (ex) {}
+        
+        try { await bot.client.destroy(); } catch (ex) {}
+        botManager.delete(clientId);
+        
+        setTimeout(async () => {
+          const dbBot = require('./db').botBul(clientId);
+          if (dbBot) {
+            logger.info('BOT_INIT_RETRY', `Puppeteer restart'inden sonra bot yeniden başlatılıyor`, {
+              clientId,
+              isim: dbBot.isim,
+              originalError: errorMsg.substring(0, 150)
+            });
+            botOlustur(clientId, dbBot.isim);
+          }
+        }, 3_000);
+      }, 30_000);
+    }
   });
 
   return bot;
@@ -873,7 +938,23 @@ async function botDurdur(clientId) {
   const bot = botManager.get(clientId);
   if (!bot) return;
   if (bot._watchdog) { clearInterval(bot._watchdog); bot._watchdog = null; }
-  try { await bot.client.destroy(); } catch {}
+  
+  // Browser'ı force close et (Puppeteer crash'leri önlemek için)
+  try {
+    if (bot.client && bot.client.pupBrowser) {
+      await bot.client.pupBrowser.close().catch(() => {});
+    }
+  } catch (e) {
+    logger.debug('BOT_SHUTDOWN', 'Browser kapatma hatası', { clientId, error: String(e) });
+  }
+  
+  // Client'ı destroy et
+  try { 
+    await bot.client.destroy(); 
+  } catch (e) {
+    logger.debug('BOT_SHUTDOWN', 'Client destroy hatası', { clientId, error: String(e) });
+  }
+  
   temizleLock(clientId);
   botManager.delete(clientId);
 }
