@@ -120,7 +120,7 @@ app.post('/api/login', (req, res) => {
 
   logEkle({ userId: user.id, action: 'login', detail: user.username, ipAddress: getIP(req) });
   const token = jwt.sign({ id: user.id, username: user.username, email: user.email, role: user.role }, SECRET, { expiresIn: '30d' });
-  res.json({ token, user: { id: user.id, username: user.username, email: user.email, role: user.role } });
+  res.json({ token, user: { id: user.id, username: user.username, email: user.email, role: user.role, phone: user.phone } });
 });
 
 app.post('/api/register', async (req, res) => {
