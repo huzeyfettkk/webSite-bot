@@ -479,12 +479,14 @@ app.get('/api/ilanlar', authMiddleware, (req, res) => {
       // İkinci geçen il/ilçe (list2'den)
       let ilanNereye = null;
       let ilanNereyeIdx = Infinity;
+      let hasDirectMatch = false;  // list2'den bulundu mu?
       if (nList2.length > 0) {
         for (const n of nList2) {
           const idx = normText.indexOf(n);
           if (idx !== -1 && idx > ilanNedenidenIdx && idx < ilanNereyeIdx) {
             ilanNereyeIdx = idx;
             ilanNereye = n;
+            hasDirectMatch = true;
           }
         }
       }
@@ -502,15 +504,40 @@ app.get('/api/ilanlar', authMiddleware, (req, res) => {
         }
       }
 
+      // ── Match Score Hes: 30=tam eşleşme, 20=kısmi, 10=tek şehir ──
+      let matchScore = 0;
+      if (!nList2 || nList2.length === 0) {
+        // Tek şehir araması: ilanNereden varsa match
+        matchScore = ilanNereden ? 10 : 0;
+      } else {
+        // İki şehir araması
+        if (hasDirectMatch) {
+          // list2'den direct bulundu (tam eşleşme)
+          matchScore = 30;  // ✅ İstanbul → Samsun
+        } else if (ilanNereye && ilanNedenidenIdx !== Infinity) {
+          // list1 var ama list2'yi list1'in başka bir elemanından buldu (kısmi)
+          matchScore = 20;  // ⊕ İstanbul + diğer il/ilçe
+        } else if (ilanNereden) {
+          // Sadece list1'den biri var
+          matchScore = 10;  // ○ Sadece İstanbul
+        }
+      }
+
       return {
         ...ilan,
         ilanNereden: ilanNereden || (ilceler1.length > 0 ? ilceler1[0] : null),
-        ilanNereye: ilanNereye || (ilceler2.length > 0 ? ilceler2[0] : (ilceler1.length > 1 ? ilceler1[1] : null))
+        ilanNereye: ilanNereye || (ilceler2.length > 0 ? ilceler2[0] : (ilceler1.length > 1 ? ilceler1[1] : null)),
+        _matchScore: matchScore
       };
     });
 
-    // En yeni → en eski sırasına göre sor
-    const ilanlar = ilanlarWithSeq.sort((a, b) => b.timestamp - a.timestamp);
+    // ── SIRALAMA: Match Score DESC, sonra Timestamp DESC ──
+    const ilanlar = ilanlarWithSeq
+      .sort((a, b) => {
+        if (a._matchScore !== b._matchScore) return b._matchScore - a._matchScore;
+        return b.timestamp - a.timestamp;
+      })
+      .map(({ _matchScore, ...item }) => item);  // Geçici alan çıkar
 
     return res.json({ ilanlar, matchedTerms, ilceler1, ilceler2 });
   }
