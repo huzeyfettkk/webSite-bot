@@ -258,6 +258,19 @@ function ilanAra(sehir1, sehir2, ilceler1, ilceler2) {
 }
 
 /**
+ * Aynı içeriğin eski versiyonunu sil, yenisini ekle
+ * contentHashStr: sayısal hash (zaman dilimi olmadan)
+ * hash: tam hash (contentHashStr + '_' + timeBucket)
+ */
+function ilanGuncelleEkle({ contentHashStr, hash, text, cities, chatName, chatId, senderPhone, timestamp }) {
+  // Aynı içeriğin önceki zaman dilimindeki kaydını sil
+  db.prepare("DELETE FROM ilanlar WHERE hash GLOB ? AND hash != ?")
+    .run(contentHashStr + '_*', hash);
+  // Yeni ilanı ekle
+  ilanEkle({ hash, text, cities, chatName, chatId, senderPhone, timestamp });
+}
+
+/**
  * Eski ilanları temizle (24 saatten eski)
  */
 function ilanTemizle() {
@@ -458,7 +471,7 @@ function rizaVarMi(userId) {
 module.exports = {
   db,
   // İlan
-  ilanEkle, ilanAra, ilanTemizle, ilanSayisi,
+  ilanEkle, ilanGuncelleEkle, ilanAra, ilanTemizle, ilanSayisi,
   // Kullanıcı
   kullaniciBul, kullaniciBulUsername, kullaniciBulEmail,
   kullaniciBulGoogleId, kullaniciEkle, kullaniciGuncelle,

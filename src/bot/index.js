@@ -7,7 +7,7 @@ require('dotenv').config();
 const logger = require('../utils/bot-logger');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const { startServer } = require('../web/server');
-const { ilanEkle }    = require('../database/db');
+const { ilanEkle, ilanGuncelleEkle } = require('../database/db');
 const qrcode          = require('qrcode-terminal');
 const fs              = require('fs');
 const path            = require('path');
@@ -28,7 +28,8 @@ if (!fs.existsSync(SESSIONS_DIR)) {
 }
 
 const CONFIG = {
-  TTL_MS: 1 * 60 * 60 * 1000, // 1 saat
+  TTL_MS:   1 * 60 * 60 * 1000, // 1 saat
+  DEDUP_MS: 5 * 60 * 1000,      // 5 dakika — aynı ilan bu süre geçince tekrar yayınlanabilir
 
   // Türkiye telefon: 05XXXXXXXXX, 0(5XX)XXXXXXX, 0(4XX) XXX X XXX (sabit hat dahil)
   PHONE_REGEX: /(?<!\d)((?:\+\s*90\s*|0\s*)\(?\s*[2-9]\d{2}\s*\)?(?:[ .\-]?\d){7})(?!\d)/g,
@@ -352,15 +353,23 @@ function isSamsunIlani(text) {
 class IlanStore {
   constructor() {
     this._store  = new Map();  // id → ilan
-    this._hashes = new Set();  // içerik hash'leri
+    this._hashes = new Map();  // içerik hash → { timestamp, storeId }
     setInterval(() => this._cleanup(), 60_000);
   }
 
   add(id, data) {
-    const h = contentHash(data.text);
-    if (this._hashes.has(h)) return; // aynı içerik, farklı grup → atla
-    this._hashes.add(h);
-    this._store.set(id, { ...data, timestamp: data.timestamp || Date.now(), _hash: h });
+    const h   = contentHash(data.text);
+    const now = data.timestamp || Date.now();
+    const existing = this._hashes.get(h);
+
+    if (existing) {
+      if (now - existing.timestamp < CONFIG.DEDUP_MS) return; // 5 dk içinde → atla
+      // 5 dk geçmiş → eski ilanı RAM'den sil
+      this._store.delete(existing.storeId);
+    }
+
+    this._hashes.set(h, { timestamp: now, storeId: id });
+    this._store.set(id, { ...data, timestamp: now, _hash: h });
   }
 
   // Ham sonuç döndür (server.js'de DB ile birleştirmek için)
@@ -740,13 +749,14 @@ function botOlustur(clientId, isim) {
             try {
               const cities    = extractCities(body);
               const linePairs = extractLinePairs(body);
-              const timestamp = msg.timestamp * 1000;
-              const hash      = contentHash(body);
-              const kanalAdi  = chat.name || msg.from || 'Kanal';
+              const timestamp      = msg.timestamp * 1000;
+              const contentHashStr = String(contentHash(body));
+              const hash           = contentHashStr + '_' + Math.floor(timestamp / CONFIG.DEDUP_MS);
+              const kanalAdi       = chat.name || msg.from || 'Kanal';
               store.add(msg.from + '_' + msg.id.id, { text: body, cities, linePairs, chatName: kanalAdi, chatId: msg.from, senderName: kanalAdi, timestamp });
 
               try {
-                ilanEkle({ hash: String(hash), text: body, cities, chatName: kanalAdi, chatId: msg.from, senderPhone: '', timestamp });
+                ilanGuncelleEkle({ contentHashStr, hash: String(hash), text: body, cities, chatName: kanalAdi, chatId: msg.from, senderPhone: '', timestamp });
                 logger.success('ILAN_SAVE', `İlan başarıyla kaydedildi`, { channel: kanalAdi, cities: cities.join(', '), textLength: body.length });
               } catch (dbErr) {
                 logger.error('ILAN_SAVE', `İlan veritabanına kaydedilemedi`, dbErr, { channel: kanalAdi });
@@ -894,7 +904,8 @@ function botOlustur(clientId, isim) {
         const cities    = extractCities(finalText);
         const linePairs = extractLinePairs(finalText);
         const timestamp = msg.timestamp * 1000;
-        const hash      = contentHash(body); // dedup için orijinal body hash'i
+        const contentHashStr = String(contentHash(body));
+        const hash           = contentHashStr + '_' + Math.floor(timestamp / CONFIG.DEDUP_MS); // 5 dk pencereli dedup
 
         store.add(msg.from + '_' + msg.id.id, {
           text: finalText, cities, linePairs,
@@ -903,8 +914,8 @@ function botOlustur(clientId, isim) {
           senderName: msg.author || msg.from,
           timestamp,
         });
-        ilanEkle({
-          hash: String(hash), text: finalText, cities,
+        ilanGuncelleEkle({
+          contentHashStr, hash: String(hash), text: finalText, cities,
           chatName: chat.name || 'Grup',
           chatId: chat.id._serialized,
           senderPhone,
