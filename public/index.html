@@ -252,9 +252,10 @@ tr:hover td{background:#f8faff}
 .dualTag{display:inline-flex;align-items:center;gap:5px;background:var(--accent);color:white;border-radius:6px;padding:3px 9px;font-size:13px;font-weight:600;white-space:nowrap}
 .dualTag button{background:none;border:none;color:rgba(255,255,255,.8);cursor:pointer;font-size:13px;padding:0;line-height:1;display:flex;align-items:center}
 .dualTag button:hover{color:white}
-.searchDivider{display:flex;align-items:center;padding-left:60px}
-.searchDividerLine{flex:1;height:1px;background:var(--border);position:relative}
-.searchDividerArrow{font-size:14px;color:var(--muted);margin:0 8px;opacity:.6}
+.searchDivider{display:flex;align-items:center;padding-left:60px;gap:8px}
+.searchDividerLine{flex:1;height:1px;background:var(--border)}
+.swapBtn{flex-shrink:0;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:all .15s;line-height:1}
+.swapBtn:hover{border-color:var(--accent);color:var(--accent);background:#eff6ff;transform:rotate(180deg)}
 .dualOneriBox{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1.5px solid var(--accent);border-radius:10px;box-shadow:var(--shadow-md);z-index:200;max-height:220px;overflow-y:auto}
 .dualOneriItem{padding:10px 14px;cursor:pointer;font-size:14px;transition:background .1s}
 .dualOneriItem:hover,.dualOneriItem.aktif{background:var(--accent);color:white}
@@ -572,8 +573,11 @@ tr:hover td{background:#f8faff}
                 <div class="dualOneriBox" id="neredenOneriBox" style="display:none"></div>
               </div>
             </div>
-            <!-- Ayırıcı -->
-            <div class="searchDivider"><div class="searchDividerArrow">↕</div><div class="searchDividerLine"></div></div>
+            <!-- Ayırıcı + Swap -->
+            <div class="searchDivider">
+              <button class="swapBtn" onclick="swapDual()" title="Nereden ↔ Nereye değiştir">⇅</button>
+              <div class="searchDividerLine"></div>
+            </div>
             <!-- Nereye (çoklu) -->
             <div class="searchDualRow">
               <span class="searchDualLabel">🏁 Nereye</span>
@@ -587,16 +591,12 @@ tr:hover td{background:#f8faff}
           </div>
           <div class="searchBtnGroup" style="flex-shrink:0;padding-top:2px;display:flex;flex-direction:column;gap:6px">
             <button class="btnSearch" onclick="araIlanlar()">🔍 Ara</button>
-            <button class="btnAI" id="btnAI" onclick="aiAra()" title="AI ile akıllı arama">
-              <span class="aiIcon">✨ AI Ara</span>
-              <div class="aiSpinner"></div>
-            </button>
             <button class="btnReset" onclick="resetArama()">Temizle</button>
             <button class="liveBtn" id="liveBtn" onclick="toggleLive()"><div class="liveDot"></div> Canlı</button>
           </div>
         </div>
       </div>
-      <div class="aiSonucBanner" id="aiSonucBanner">
+      <div class="aiSonucBanner" id="aiSonucBanner" style="display:none">
         <div class="aiSonucBaslik">✨ AI Analizi <span id="aiSonucSayac" style="font-weight:400;color:#6d28d9;font-size:12px"></span></div>
         <div class="aiSonucOzet" id="aiSonucOzet"></div>
       </div>
@@ -1023,7 +1023,7 @@ function _baslatApp(){
   // Bildirim kart durumunu güncelle
   setTimeout(loadProfilBildirim, 300);
   // Şehir önerileri için listeyi yükle
-  api('/api/sehirler').then(d=>{ if(d&&d.sehirler) window._tumSehirler=d.sehirler; });
+  api('/api/sehirler').then(d=>{ if(d&&d.sehirler){ window._tumSehirler=d.sehirler; loadSearchFilters(); } });
   if (!currentUser.phone || !currentUser.phone.trim()) {
     document.getElementById('telefonBanner').style.display = 'block';
   }
@@ -1414,6 +1414,33 @@ function timeAgo(ts){
 const dualState = { nereden: [], nereye: [] };
 const dualOneriIdx = { nereden: -1, nereye: -1 };
 
+// ── Filtre localStorage ──────────────────────
+function saveSearchFilters(){
+  localStorage.setItem('yg_filters', JSON.stringify({ nereden: dualState.nereden, nereye: dualState.nereye }));
+}
+function loadSearchFilters(){
+  try{
+    const raw = localStorage.getItem('yg_filters');
+    if(!raw) return;
+    const f = JSON.parse(raw);
+    if(Array.isArray(f.nereden)) dualState.nereden = f.nereden;
+    if(Array.isArray(f.nereye))  dualState.nereye  = f.nereye;
+    renderDualTags('nereden');
+    renderDualTags('nereye');
+    if(dualState.nereden.length || dualState.nereye.length) araIlanlar();
+  }catch(e){}
+}
+function swapDual(){
+  const tmp = [...dualState.nereden];
+  dualState.nereden = [...dualState.nereye];
+  dualState.nereye  = tmp;
+  renderDualTags('nereden');
+  renderDualTags('nereye');
+  saveSearchFilters();
+  araIlanlar();
+}
+// ── Filtre sonu ──────────────────────────────
+
 function normTR(s){
   return String(s||'')
     .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
@@ -1463,6 +1490,7 @@ function renderDualTags(hangi){
 function removeDualTag(hangi, idx){
   dualState[hangi].splice(idx, 1);
   renderDualTags(hangi);
+  saveSearchFilters();
   araIlanlar();
 }
 
@@ -1485,6 +1513,7 @@ function dualEkle(hangi, sehir){
   dualOneriIdx[hangi] = -1;
   const inp = document.getElementById(hangi+'Input');
   if(inp){ inp.value=''; inp.focus(); }
+  saveSearchFilters();
   araIlanlar();
 }
 
@@ -1543,6 +1572,7 @@ function dualKeydown(e, hangi){
     if(inp && inp.value==='' && dualState[hangi].length>0){
       dualState[hangi].pop();
       renderDualTags(hangi);
+      saveSearchFilters();
       araIlanlar();
     }
   } else if(e.key==='Escape'){
@@ -1579,6 +1609,7 @@ function resetArama(){
   renderDualTags('nereden');
   renderDualTags('nereye');
   lastSearch = {s1:'',s2:''};
+  localStorage.removeItem('yg_filters');
   ['nereden','nereye'].forEach(h=>{
     const inp=document.getElementById(h+'Input');
     const box=document.getElementById(h+'OneriBox');
