@@ -1252,7 +1252,8 @@ function renderSatirlar(text, matchedTerms, ilceler1, ilceler2){
       if(var1 && var2){
         // Her ikisi de var — yön kontrolü
         if(p1 < p2) return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
-        return `<span class="satirTers" title="Ters yön">${hlText(satir, matchedTerms)} <span class="tersIkon">↩</span></span>`;
+        // Ters sıra → sadece soluk, çizgi yok
+        return `<span class="satirSoluk">${esc(satir)}</span>`;
       }
       // Sadece biri var veya ikisi de yok → soluklaştır
       return `<span class="satirSoluk">${esc(satir)}</span>`;
