@@ -145,8 +145,9 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .ilanTime{font-size:11px;color:var(--muted);background:var(--bg);padding:3px 9px;border-radius:20px;border:1px solid var(--border);white-space:nowrap;flex-shrink:0}
 .ilanText{font-size:13.5px;line-height:1.75;color:var(--text);white-space:pre-wrap;word-break:break-word}
 .ilanText .hl{background:#dbeafe;color:#1e40af;font-weight:700;padding:0 3px;border-radius:3px}
-/* Kısmi eşleşme kartlarında hiçbir vurgu görünmesin */
-.ilanCardKismi .hl{background:transparent!important;color:inherit!important;font-weight:inherit!important;padding:0!important;border-radius:0!important}
+/* Kısmi eşleşme kartlarında hiçbir vurgu görünmesin — nükleer kural */
+div.ilanCardKismi span.hl{background:transparent!important;color:inherit!important;font-weight:inherit!important;padding:0!important;border-radius:0!important;box-shadow:none!important;border:none!important}
+div.ilanCardKismi .hl{background:transparent!important;color:inherit!important;font-weight:inherit!important;padding:0!important;border-radius:0!important;box-shadow:none!important;border:none!important}
 /* Satır bazlı render stilleri */
 .ilanTextSatir{white-space:pre-wrap;word-break:break-word}
 .satirEsles{display:block;color:var(--text);font-size:13.5px;line-height:1.75}
@@ -1076,8 +1077,8 @@ function renderIlanlar(ilanlar, matchedTerms=[], ilceler1=[], ilceler2=[]){
 
     let ilanHTML = '';
     if(isKismi){
-      // Kısmi eşleşme: hiç highlight yok, sadece düz metin (telefon butonları aktif)
-      ilanHTML = `<div class="ilanText">${hlText(text, [])}</div>`;
+      // Kısmi eşleşme: ham metin — hiçbir fonksiyon çağrılmaz, span/hl üretilmez
+      ilanHTML = `<div class="ilanText">${esc(text)}</div>`;
     } else if(aramaVar){
       ilanHTML = renderSatirlar(text, matchedTerms, ilceler1, ilceler2);
     } else {
