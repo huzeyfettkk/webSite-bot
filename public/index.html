@@ -978,48 +978,60 @@ async function loadIlanlar(s1,s2){
 async function loadIlanlarCoklu(neredenList, nereyeList){
   document.getElementById('ilanList').innerHTML='<div class="loader"><div class="spinner"></div></div>';
 
-  // Seçim yoksa tümünü göster
   if(!neredenList.length && !nereyeList.length){ loadIlanlar(); return; }
 
-  // Kombinasyonları oluştur
-  // Sadece nereden varsa: her nereden için tekli arama
-  // Sadece nereye varsa: her nereye için tekli arama (s1 olarak)
-  // İkisi de varsa: her nereden × nereye kombinasyonu
+  const ikiyonMod = neredenList.length > 0 && nereyeList.length > 0;
+
+  // Kombinasyonları oluştur — ikiyon modda hem tam (s1×s2) hem kısmi (s1-only) istekler
   const kombinasyonlar = [];
-  if(neredenList.length && nereyeList.length){
+  if(ikiyonMod){
     for(const s1 of neredenList)
       for(const s2 of nereyeList)
-        kombinasyonlar.push({s1, s2});
+        kombinasyonlar.push({s1, s2, kismi: false});
+    // Kısmi eşleşme: sadece nereden — sonuçta tam eşleşme yoksa opacity ile gösterilecek
+    for(const s1 of neredenList)
+      kombinasyonlar.push({s1, s2: null, kismi: true});
   } else if(neredenList.length){
-    for(const s1 of neredenList) kombinasyonlar.push({s1, s2:null});
+    for(const s1 of neredenList) kombinasyonlar.push({s1, s2:null, kismi:false});
   } else {
-    for(const s1 of nereyeList) kombinasyonlar.push({s1, s2:null});
+    for(const s1 of nereyeList) kombinasyonlar.push({s1, s2:null, kismi:false});
   }
 
   try {
-    // Paralel istekler
+    // Tüm istekler paralel
     const sonuclar = await Promise.all(kombinasyonlar.map(({s1,s2})=>{
       let url='/api/ilanlar?sehir1='+encodeURIComponent(s1);
       if(s2) url+='&sehir2='+encodeURIComponent(s2);
       return api(url);
     }));
 
-    // Birleştir — hash bazlı duplicate temizle
     const ilanMap = new Map();
+    const tamHashes = new Set();
     const allMatchedTerms = new Set(getSearchTags().map(t=>t.toLowerCase()));
     let mergedIlceler1 = [], mergedIlceler2 = [];
-    for(const data of sonuclar){
-      if(!data||data.hata) continue;
-      (data.matchedTerms||[]).forEach(t=>allMatchedTerms.add(t.toLowerCase()));
-      if(data.ilceler1) mergedIlceler1 = [...new Set([...mergedIlceler1,...data.ilceler1])];
-      if(data.ilceler2) mergedIlceler2 = [...new Set([...mergedIlceler2,...data.ilceler2])];
-      (data.ilanlar||[]).forEach(ilan=>{
-        const key = ilan.hash||String(ilan.id||ilan.timestamp);
-        if(!ilanMap.has(key)) ilanMap.set(key, ilan);
-      });
-    }
 
-    // En yeniden en eskiye sırala
+    // 1. Geçiş: tam eşleşmeleri işle (kismi:false)
+    sonuclar.forEach((data, idx)=>{
+      if(!data||data.hata||kombinasyonlar[idx].kismi) return;
+      (data.matchedTerms||[]).forEach(t=>allMatchedTerms.add(t.toLowerCase()));
+      if(data.ilceler1) mergedIlceler1=[...new Set([...mergedIlceler1,...data.ilceler1])];
+      if(data.ilceler2) mergedIlceler2=[...new Set([...mergedIlceler2,...data.ilceler2])];
+      (data.ilanlar||[]).forEach(ilan=>{
+        const key=ilan.hash||String(ilan.id||ilan.timestamp);
+        if(!ilanMap.has(key)){ ilanMap.set(key, ilan); tamHashes.add(key); }
+      });
+    });
+
+    // 2. Geçiş: kısmi eşleşmeleri işle — tam eşleşmede yoksa _kismi:true ile ekle
+    sonuclar.forEach((data, idx)=>{
+      if(!data||data.hata||!kombinasyonlar[idx].kismi) return;
+      if(data.ilceler1) mergedIlceler1=[...new Set([...mergedIlceler1,...data.ilceler1])];
+      (data.ilanlar||[]).forEach(ilan=>{
+        const key=ilan.hash||String(ilan.id||ilan.timestamp);
+        if(!ilanMap.has(key)) ilanMap.set(key, {...ilan, _kismi:true});
+      });
+    });
+
     const ilanlar = [...ilanMap.values()].sort((a,b)=>b.timestamp-a.timestamp);
 
     if(!ilanlar.length){
@@ -1036,20 +1048,35 @@ async function loadIlanlarCoklu(neredenList, nereyeList){
 }
 
 function renderIlanlar(ilanlar, matchedTerms=[], ilceler1=[], ilceler2=[]){
-  document.getElementById('ilanCountNum').textContent = ilanlar.length;
   if(!ilanlar.length){
+    document.getElementById('ilanCountNum').textContent = '0';
     document.getElementById('ilanList').innerHTML = '<div class="emptyState"><div class="emptyIcon">📭</div><p>Aradığınız kriterlere uygun ilan bulunamadı.</p></div>';
     return;
   }
 
   const aramaVar = dualState.nereden.length > 0 || dualState.nereye.length > 0;
+  const ikiyonMod = ilceler1.length > 0 && ilceler2.length > 0;
 
-  document.getElementById('ilanList').innerHTML = ilanlar.map((ilan, i) => {
+  // İki yön modunda tam ve kısmi eşleşmeleri ayır, tam olanlar önce
+  let sirali = ilanlar;
+  if(ikiyonMod){
+    const tam   = ilanlar.filter(i => !i._kismi).sort((a,b)=>b.timestamp-a.timestamp);
+    const kismi = ilanlar.filter(i =>  i._kismi).sort((a,b)=>b.timestamp-a.timestamp);
+    sirali = [...tam, ...kismi];
+    document.getElementById('ilanCountNum').textContent = tam.length;
+  } else {
+    document.getElementById('ilanCountNum').textContent = ilanlar.length;
+  }
+
+  document.getElementById('ilanList').innerHTML = sirali.map((ilan, i) => {
     const text = ilan.text || '';
+    const isKismi = !!ilan._kismi;
 
     let ilanHTML = '';
-    if(aramaVar){
-      // ilceler1/ilceler2 direkt geçir — satır bazlı yön kontrolü için
+    if(isKismi){
+      // Kısmi eşleşme: hiç highlight yok, sadece düz metin (telefon butonları aktif)
+      ilanHTML = `<div class="ilanText">${hlText(text, [])}</div>`;
+    } else if(aramaVar){
       ilanHTML = renderSatirlar(text, matchedTerms, ilceler1, ilceler2);
     } else {
       ilanHTML = `<div class="ilanText">${hlText(text, matchedTerms)}</div>`;
@@ -1062,8 +1089,10 @@ function renderIlanlar(ilanlar, matchedTerms=[], ilceler1=[], ilceler2=[]){
       return matchedTerms.some(t => normTR(t) === nc);
     });
 
+    const opacityStyle = isKismi ? 'opacity:0.4;transition:opacity .2s' : '';
+
     return `
-    <div class="ilanCard">
+    <div class="ilanCard" style="${opacityStyle}">
       <div class="ilanMeta">
         <span class="ilanNum">İlan ${i+1}</span>
         <span class="ilanTime">⏱ ${timeAgo(ilan.timestamp)}</span>
@@ -1355,10 +1384,6 @@ function dualEkle(hangi, sehir){
   dualOneriIdx[hangi] = -1;
   const inp = document.getElementById(hangi+'Input');
   if(inp){ inp.value=''; inp.focus(); }
-  // Nereden'e ilk şehir eklenince Nereye'ye geç (sadece nereden listesi henüz 1'deyse)
-  if(hangi==='nereden' && dualState.nereden.length===1 && dualState.nereye.length===0){
-    setTimeout(()=>{ const ni=document.getElementById('nereyeInput'); if(ni) ni.focus(); }, 100);
-  }
   araIlanlar();
 }
 
