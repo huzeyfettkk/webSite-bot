@@ -21,6 +21,7 @@ const {
   tumKullanicilar, kullaniciSil,
   logEkle, loglariGetir,
   botEkle, botGuncelle, botSil, tumBotlar, botBul,
+  rizaKaydet, rizaVarMi,
 } = require('../database/db');
 
 const app    = express();
@@ -373,6 +374,22 @@ function geminiIste(prompt) {
     request.end();
   });
 }
+
+// ── Gizlilik Politikası ─────────────────────────
+app.get('/gizlilik', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../public/gizlilik.html'));
+});
+
+// ── KVKK Rıza API ───────────────────────────────
+app.get('/api/consent/check', authMiddleware, (req, res) => {
+  res.json({ hasConsent: rizaVarMi(req.user.id) });
+});
+
+app.post('/api/consent/save', authMiddleware, (req, res) => {
+  rizaKaydet({ userId: req.user.id, version: 'v1', ipAddress: getIP(req) });
+  logEkle({ userId: req.user.id, action: 'kvkk_consent', detail: 'v1', ipAddress: getIP(req) });
+  res.json({ ok: true });
+});
 
 // ── İlan Rotaları ───────────────────────────────
 let _store = null, _config = null, _botManager = null, _botOlustur = null, _botDurdur = null, _qrWaiters = null;

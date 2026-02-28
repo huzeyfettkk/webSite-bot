@@ -335,6 +335,30 @@ tr:hover td{background:#f8faff}
 .charCount.warn{color:var(--danger)}
 .phoneNote{font-size:12px;color:var(--success);background:#f0fdf4;border:1px solid #bbf7d0;padding:4px 10px;border-radius:6px}
 
+/* ── RIZA MODALI ── */
+.rizaOverlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px}
+.rizaBox{background:var(--surface);border-radius:16px;padding:32px 28px;max-width:520px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 12px 48px rgba(0,0,0,.35);animation:fadeUp .3s ease}
+.rizaTitle{font-family:'Outfit',sans-serif;font-size:22px;font-weight:800;color:var(--text);margin-bottom:6px}
+.rizaSubtitle{font-size:13px;color:var(--muted);margin-bottom:22px;line-height:1.6}
+.rizaItem{display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border:1.5px solid var(--border);border-radius:10px;margin-bottom:12px;cursor:pointer;transition:border-color .15s,background .15s}
+.rizaItem:hover{border-color:var(--accent);background:#f5f8ff}
+.rizaItem.checked{border-color:var(--accent);background:#eff6ff}
+.rizaCheckbox{width:20px;height:20px;border:2px solid #9ca3af;border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;transition:all .15s;background:white}
+.rizaItem.checked .rizaCheckbox{background:var(--accent);border-color:var(--accent)}
+.rizaItem.checked .rizaCheckbox::after{content:'✓';color:white;font-size:13px;font-weight:700}
+.rizaText{font-size:13.5px;color:var(--text);line-height:1.65}
+.rizaText a{color:var(--accent);font-weight:600}
+.rizaNote{font-size:12px;color:var(--muted);margin:16px 0 20px;line-height:1.6;background:var(--bg);padding:10px 14px;border-radius:8px;border:1px solid var(--border)}
+.rizaDevamBtn{width:100%;padding:13px;background:#94a3b8;color:white;border:none;border-radius:10px;font-family:'Outfit',sans-serif;font-size:15px;font-weight:700;cursor:not-allowed;transition:all .2s}
+.rizaDevamBtn.aktif{background:var(--accent);cursor:pointer}
+.rizaDevamBtn.aktif:hover{background:var(--accent-h)}
+
+/* ── FOOTER ── */
+.appFooter{text-align:center;padding:28px 20px 18px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--border);margin-top:40px}
+.appFooter a{color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:6px;transition:color .15s,background .15s}
+.appFooter a:hover{color:var(--accent);background:#eff6ff}
+.appFooter span{margin:0 4px;opacity:.4}
+
 /* Loader */
 .loader{display:flex;justify-content:center;padding:40px}
 .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
@@ -857,6 +881,12 @@ tr:hover td{background:#f8faff}
       </div>
     </div>
 
+    <!-- Footer -->
+    <div class="appFooter">
+      <a href="/gizlilik" target="_blank" rel="noopener">Gizlilik Politikası</a>
+      <span>·</span>
+      <a href="mailto:yuklegit.iletisim@gmail.com?subject=Veri%20Silme%20Talebi">Veri Silme Talebi</a>
+    </div>
   </div>
 </div>
 
@@ -872,6 +902,37 @@ let liveInterval=null,isLive=false,lastSearch={s1:'',s2:''};
   if(gt&&gu){try{token=gt;currentUser=JSON.parse(decodeURIComponent(gu));localStorage.setItem('yg_token',token);localStorage.setItem('yg_user',JSON.stringify(currentUser));}catch(e){}window.history.replaceState({},'','/');}
   if(p.get('error')==='google'){window.history.replaceState({},'','/');setTimeout(()=>{const el=document.getElementById('loginError');if(el){el.textContent='Google ile giriş başarısız.';el.style.display='block';}},100);}
 })();
+
+// ── KVKK Rıza Modalı ──────────────────────────
+let _riza1=false,_riza2=false;
+function toggleRiza(n){
+  if(n===1){_riza1=!_riza1;document.getElementById('riza1Item').classList.toggle('checked',_riza1);document.getElementById('riza1Box').textContent=_riza1?'':'';}
+  if(n===2){_riza2=!_riza2;document.getElementById('riza2Item').classList.toggle('checked',_riza2);document.getElementById('riza2Box').textContent=_riza2?'':'';}
+  const btn=document.getElementById('rizaDevamBtn');
+  if(_riza1&&_riza2){btn.classList.add('aktif');}else{btn.classList.remove('aktif');}
+}
+async function rizaOnayla(){
+  if(!_riza1||!_riza2)return;
+  try{
+    await api('/api/consent/save',{method:'POST'});
+  }catch(e){console.warn('Rıza kaydedilemedi',e);}
+  document.getElementById('rizaModal').style.display='none';
+  _baslatApp();
+}
+async function checkConsent(){
+  try{
+    const d=await api('/api/consent/check');
+    return d&&d.hasConsent;
+  }catch(e){return false;}
+}
+function gosterRizaModali(){
+  _riza1=false;_riza2=false;
+  document.getElementById('riza1Item').classList.remove('checked');
+  document.getElementById('riza2Item').classList.remove('checked');
+  document.getElementById('rizaDevamBtn').classList.remove('aktif');
+  document.getElementById('rizaModal').style.display='flex';
+}
+// ── Rıza sonu ─────────────────────────────────
 
 // Hamburger
 function toggleSidebar(){
@@ -943,8 +1004,14 @@ function saveSession(data){token=data.token;currentUser={...data.user};localStor
 function logout(){
   if(token) api('/api/logout',{method:'POST'}).catch(()=>{});localStorage.removeItem('yg_token');localStorage.removeItem('yg_user');token=null;currentUser=null;document.getElementById('app').style.display='none';document.getElementById('authWrap').style.display='flex';document.getElementById('hamburger').style.display='none';showLogin();}
 
-function initApp(){
+async function initApp(){
   document.getElementById('authWrap').style.display='none';
+  // Rıza kontrolü — geçmemişse modal göster, geçmişse direkt başlat
+  const consented=await checkConsent();
+  if(!consented){gosterRizaModali();return;}
+  _baslatApp();
+}
+function _baslatApp(){
   document.getElementById('app').style.display='block';
   if(window.innerWidth <= 768) document.getElementById('hamburger').style.display='flex';
   document.getElementById('userNameDisplay').textContent=currentUser.username;
@@ -2038,6 +2105,34 @@ if(token&&currentUser){initApp();}
       }, 2000);
     }
   </script>
+
+<!-- ── KVKK Rıza Modalı ─────────────────────────── -->
+<div id="rizaModal" class="rizaOverlay" style="display:none">
+  <div class="rizaBox">
+    <div class="rizaTitle">🚛 Yükle-Gel'e Hoş Geldiniz</div>
+    <div class="rizaSubtitle">Platformu kullanmaya devam etmeden önce lütfen aşağıdaki bilgileri okuyun ve onaylayın.</div>
+
+    <div class="rizaItem" id="riza1Item" onclick="toggleRiza(1)">
+      <div class="rizaCheckbox" id="riza1Box"></div>
+      <div class="rizaText">
+        Yükle-Gel platformunun kamuya açık iş ilanı gruplarından içerik topladığını ve bu içerikleri uygulama kullanıcılarına sunduğunu okudum, anladım ve kabul ediyorum.
+      </div>
+    </div>
+
+    <div class="rizaItem" id="riza2Item" onclick="toggleRiza(2)">
+      <div class="rizaCheckbox" id="riza2Box"></div>
+      <div class="rizaText">
+        Kişisel Verilerin Korunması Kanunu (KVKK) kapsamında hazırlanan <a href="/gizlilik" target="_blank" rel="noopener" onclick="event.stopPropagation()">Gizlilik Politikası</a>'nı ve Kullanım Koşulları'nı okudum ve kabul ediyorum.
+      </div>
+    </div>
+
+    <div class="rizaNote">
+      İlanınızın veya kişisel verinizin kaldırılmasını talep etmek için <a href="mailto:yuklegit.iletisim@gmail.com">yuklegit.iletisim@gmail.com</a> adresine yazabilir veya WhatsApp destek hattımızdan ulaşabilirsiniz.
+    </div>
+
+    <button class="rizaDevamBtn" id="rizaDevamBtn" onclick="rizaOnayla()">Devam Et</button>
+  </div>
+</div>
 
 <!-- ── Yüzen WhatsApp Destek Butonu ─────────────── -->
 <a id="waFloat" href="https://wa.me/905015303028?text=Merhaba%2C%20YükleGit%20hakkında%20bilgi%20almak%20istiyorum." target="_blank" rel="noopener"

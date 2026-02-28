@@ -72,6 +72,14 @@ db.exec(`
     telefon   TEXT    NOT NULL DEFAULT '',
     createdAt TEXT    NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS consents (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId      INTEGER NOT NULL UNIQUE,
+    version     TEXT    NOT NULL DEFAULT 'v1',
+    ipAddress   TEXT    NOT NULL DEFAULT '',
+    consentedAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+  );
 `);
 
 // ── Admin yoksa oluştur ─────────────────────────
@@ -430,6 +438,22 @@ function botBul(clientId) {
 }
 
 // ══════════════════════════════════════════════
+// RIZA / CONSENT FONKSİYONLARI
+// ══════════════════════════════════════════════
+
+function rizaKaydet({ userId, version, ipAddress }) {
+  db.prepare(`
+    INSERT OR REPLACE INTO consents (userId, version, ipAddress, consentedAt)
+    VALUES (?, ?, ?, ?)
+  `).run(Number(userId), String(version || 'v1'), String(ipAddress || ''), Date.now());
+}
+
+function rizaVarMi(userId) {
+  const row = db.prepare('SELECT id FROM consents WHERE userId = ?').get(Number(userId));
+  return !!row;
+}
+
+// ══════════════════════════════════════════════
 
 module.exports = {
   db,
@@ -443,4 +467,6 @@ module.exports = {
   logEkle, loglariGetir,
   // Bot
   botEkle, botGuncelle, botSil, tumBotlar, botBul,
+  // Rıza
+  rizaKaydet, rizaVarMi,
 };

@@ -779,6 +779,39 @@ function botOlustur(clientId, isim) {
         const msgText = body.trim().substring(0, 100);
         logger.messageReceived(msg.from, msgText, msg.hasMedia);
 
+        // ── SSS: Yasal / KVKK keyword eşleştirme ──────────────
+        const normMsg = body.toLowerCase()
+          .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
+          .replace(/Ğ/g,'g').replace(/ğ/g,'g')
+          .replace(/Ü/g,'u').replace(/ü/g,'u')
+          .replace(/Ş/g,'s').replace(/ş/g,'s')
+          .replace(/Ö/g,'o').replace(/ö/g,'o')
+          .replace(/Ç/g,'c').replace(/ç/g,'c');
+
+        const icerir = (...kelimeler) => kelimeler.some(k => normMsg.includes(k));
+
+        let faqCevap = null;
+        if (icerir('ilan kaldir', 'ilanimi sil', 'numarami kaldir', 'ilan sil', 'iletisim kaldir')) {
+          faqCevap = '📧 İlanınızın veya iletişim bilgilerinizin platformdan kaldırılması için *yuklegit.iletisim@gmail.com* adresine "Veri Silme Talebi" konusuyla e-posta gönderebilirsiniz. Talepler en geç 30 gün içinde işleme alınır. 📧';
+        } else if (icerir('kvkk', 'kisisel veri', 'gizlilik')) {
+          faqCevap = '📋 Yükle-Gel olarak kişisel verilerinizi KVKK kapsamında işliyor ve koruyoruz. Gizlilik politikamıza *yuklegit.tr/gizlilik* adresinden ulaşabilirsiniz. Sorularınız için: yuklegit.iletisim@gmail.com 📋';
+        } else if (icerir('izin', 'riza', 'onay')) {
+          faqCevap = '📩 Platformumuzda yayınlanan ilanlar, kamuya açık iş ilanı gruplarına ilan sahipleri tarafından bizzat paylaşılmış içeriklerdir. Herhangi bir içeriğin kaldırılmasını talep etme hakkınız mevcuttur. 📩 yuklegit.iletisim@gmail.com';
+        } else if (icerir('sikayet', 'hukuk', 'avukat', 'dava')) {
+          faqCevap = '⚖️ Yasal talepleriniz için *yuklegit.iletisim@gmail.com* adresine yazabilirsiniz. Size en kısa sürede dönüş yapılacaktır. ⚖️';
+        }
+
+        if (faqCevap) {
+          try {
+            await msg.reply(faqCevap);
+            logger.messageSent(msg.from, 1, true);
+          } catch (err) {
+            logger.error('MESSAGE_SEND', 'SSS cevabı gönderilemedi', err, { from: msg.from });
+          }
+          return;
+        }
+        // ── SSS sonu ──────────────────────────────────────────
+
         const sehirler = sehirCikarBot(body.trim());
 
         // Şehir araması değilse → karşılama mesajı gönder
