@@ -1208,9 +1208,10 @@ function renderIlanlar(ilanlar, matchedTerms=[], ilceler1=[], ilceler2=[]){
 }
 
 // Satır bazlı akıllı render:
-// - Eşleşen satırları tam göster + highlight
-// - Eşleşmeyen satırları soluklaştır
-// - Ters yön eşleşmesini (s2→s1) soluk göster
+// Senaryo 1 — Sadece nereden: satırda nereden şehri geçiyorsa vurgula
+// Senaryo 2 — Sadece nereye:  satırda nereye şehri geçiyorsa vurgula
+// Senaryo 3 — İkisi de dolu:  SADECE ikisi birden geçen VE nereden önde olan satırları vurgula
+//   → Biri eksikse → soluk  |  ters sıradaysa → üstü çizili soluk
 function renderSatirlar(text, matchedTerms, ilceler1, ilceler2){
   const norm = s => String(s||'')
     .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
@@ -1221,7 +1222,6 @@ function renderSatirlar(text, matchedTerms, ilceler1, ilceler2){
     .replace(/Ç/g,'c').replace(/ç/g,'c')
     .toLowerCase().replace(/[^a-z0-9]/g,' ').replace(/\s+/g,' ').trim();
 
-  // il+ilçe normalize listeleri
   const nList1 = (ilceler1||[]).map(norm).filter(Boolean);
   const nList2 = (ilceler2||[]).map(norm).filter(Boolean);
   const normTerms = matchedTerms.map(norm).filter(Boolean);
@@ -1234,33 +1234,33 @@ function renderSatirlar(text, matchedTerms, ilceler1, ilceler2){
   const parcalar = satirlar.map(satir => {
     const ns = norm(satir);
 
-    // Telefon satırı — HER ZAMAN tam görünür ve tıklanabilir
+    // Telefon satırı — HER ZAMAN tam görünür
     if(telRegex.test(satir)){
       return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
     }
 
-    // Satırda hiç eşleşen terim yok → soluklaştır
-    const satirdeEslesme = normTerms.some(t => t && ns.includes(t));
-    if(!satirdeEslesme){
+    if(aramaIkiYon){
+      // Her iki şehrin satırdaki ilk pozisyonunu bul
+      let p1 = Infinity;
+      for(const n of nList1){ const idx=ns.indexOf(n); if(idx!==-1&&idx<p1) p1=idx; }
+      let p2 = Infinity;
+      for(const n of nList2){ const idx=ns.indexOf(n); if(idx!==-1&&idx<p2) p2=idx; }
+
+      const var1 = p1 !== Infinity;
+      const var2 = p2 !== Infinity;
+
+      if(var1 && var2){
+        // Her ikisi de var — yön kontrolü
+        if(p1 < p2) return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
+        return `<span class="satirTers" title="Ters yön">${hlText(satir, matchedTerms)} <span class="tersIkon">↩</span></span>`;
+      }
+      // Sadece biri var veya ikisi de yok → soluklaştır
       return `<span class="satirSoluk">${esc(satir)}</span>`;
     }
 
-    // İki taraflı arama → yön kontrolü (ilçeler dahil)
-    if(aramaIkiYon){
-      let p1 = Infinity;
-      for(const n of nList1){ const i=ns.indexOf(n); if(i!==-1&&i<p1) p1=i; }
-      let p2 = Infinity;
-      for(const n of nList2){ const i=ns.indexOf(n); if(i!==-1&&i<p2) p2=i; }
-
-      if(p1!==Infinity && p2!==Infinity){
-        if(p1 < p2) return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
-        if(p2 < p1) return `<span class="satirTers" title="Ters yön">${hlText(satir, matchedTerms)} <span class="tersIkon">↩</span></span>`;
-      }
-      // Sadece bir taraf geçiyor — eşleşen satır
-      return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
-    }
-
-    // Tek şehir araması
+    // Tek şehir araması (senaryo 1 veya 2)
+    const satirdeEslesme = normTerms.some(t => t && ns.includes(t));
+    if(!satirdeEslesme) return `<span class="satirSoluk">${esc(satir)}</span>`;
     return `<span class="satirEsles">${hlText(satir, matchedTerms)}</span>`;
   });
 
