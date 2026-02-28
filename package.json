@@ -2,6 +2,10 @@
   "name": "yuklegit",
   "version": "2.0.0",
   "main": "src/bot/index.js",
+  "scripts": {
+    "audit:ci": "npm audit --audit-level=high",
+    "audit:fix": "npm audit fix"
+  },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^9.4.3",
@@ -9,8 +13,9 @@
     "express": "^4.18.2",
     "express-session": "^1.18.0",
     "helmet": "^8.0.0",
+    "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.0",
-    "nodemailer": "^6.9.9",
+    "nodemailer": "^8.0.1",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "qrcode": "^1.5.3",

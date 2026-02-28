@@ -16,6 +16,7 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const nodemailer     = require('nodemailer');
 const xss            = require('xss');
 const { secLog }     = require('../utils/security-logger');
+const Joi            = require('joi');
 const {
   ilanEkle, ilanAra, ilanSayisi,
   kullaniciBul, kullaniciBulUsername, kullaniciBulEmail,
@@ -99,6 +100,45 @@ function ipWhitelist(req, res, next) {
   if (!ADMIN_WLIST.length) return next();
   if (!ADMIN_WLIST.includes(getIP(req))) return res.status(404).end();
   next();
+}
+
+// ── Joi Input Validation Şemaları ───────────────
+const _J = { tlds: { allow: false } }; // e-posta TLD doğrulamasını kapat (Türkçe domain uyumu)
+const S = {
+  login:       Joi.object({ username: Joi.string().max(100).required(), password: Joi.string().max(200).required() }),
+  register:    Joi.object({ username: Joi.string().pattern(/^[a-zA-Z0-9_\-]+$/).min(3).max(50).required(), email: Joi.string().email(_J).max(200).required(), password: Joi.string().min(6).max(200).required(), phone: Joi.string().max(25).required() }),
+  adminLogin:  Joi.object({ u: Joi.string().max(100).required(), p: Joi.string().max(200).required() }),
+  ilanOlustur: Joi.object({ metin: Joi.string().min(1).max(1000).required() }),
+  profile:     Joi.object({ email: Joi.string().email(_J).max(200).optional(), phone: Joi.string().max(25).optional().allow(''), currentPassword: Joi.string().max(200).optional(), newPassword: Joi.string().min(6).max(200).optional() }),
+  blacklist:   Joi.object({ kelime: Joi.string().max(100).required() }),
+  userAdd:     Joi.object({ username: Joi.string().pattern(/^[a-zA-Z0-9_\-]+$/).min(3).max(50).required(), email: Joi.string().email(_J).max(200).optional().allow(''), password: Joi.string().min(6).max(200).required(), role: Joi.string().valid('user','admin').default('user') }),
+  forgotPw:    Joi.object({ email: Joi.string().email(_J).max(200).required() }),
+  resetPw:     Joi.object({ token: Joi.string().max(200).required(), password: Joi.string().min(6).max(200).required() }),
+  botEkle:     Joi.object({ isim: Joi.string().max(100).required() }),
+  aiAra:       Joi.object({ soru: Joi.string().min(1).max(500).required() }),
+};
+// validate(S.xxx) → Express middleware olarak kullan
+function validate(schema) {
+  return (req, res, next) => {
+    const { error, value } = schema.validate(req.body, { abortEarly: true, allowUnknown: false, stripUnknown: true });
+    if (error) return res.status(400).json({ error: error.details[0].message });
+    req.body = value; // doğrulanmış + temizlenmiş değerler
+    next();
+  };
+}
+
+// ── CSRF — Double Submit Cookie (admin paneli) ──
+// NOT: Ana API'ler JWT Bearer kullandığından CSRF'e karşı zaten korumalı.
+// Sadece /yonetim-lgn form girişine uygulanır.
+function setCsrfCookie(res) {
+  const tok = crypto.randomBytes(24).toString('hex');
+  res.setHeader('Set-Cookie', `csrf_tok=${tok}; SameSite=Strict; Path=/yonetim-lgn; Max-Age=3600`);
+  return tok;
+}
+function verifyCsrf(req) {
+  const cookie = parseCookie(req, 'csrf_tok');
+  const header = req.headers['x-csrf-token'] || '';
+  return !!(cookie && header && cookie === header);
 }
 
 // ── JWT Blacklist (logout & session invalidation) ──
@@ -264,7 +304,7 @@ function adminMiddleware(req, res, next) {
 
 // ── Auth Rotaları ───────────────────────────────
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', validate(S.login), (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Bilgiler eksik' });
   const user = kullaniciBulUsername(username) || kullaniciBulEmail(username);
@@ -278,7 +318,7 @@ app.post('/api/login', (req, res) => {
   res.json({ token, user: { id: user.id, username: user.username, email: user.email, role: user.role, phone: user.phone } });
 });
 
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', validate(S.register), async (req, res) => {
   const { username, email, password, phone } = req.body;
   if (!username || !email || !password || !phone) return res.status(400).json({ error: 'Tüm alanlar gerekli' });
   if (password.length < 6) return res.status(400).json({ error: 'Şifre en az 6 karakter olmalı' });
@@ -302,7 +342,7 @@ app.get('/verify', (req, res) => {
   res.redirect('/?verified=1');
 });
 
-app.post('/api/forgot-password', async (req, res) => {
+app.post('/api/forgot-password', validate(S.forgotPw), async (req, res) => {
   const user = kullaniciBulEmail(req.body.email);
   if (user) {
     const rToken = genToken();
@@ -312,7 +352,7 @@ app.post('/api/forgot-password', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/reset-password', (req, res) => {
+app.post('/api/reset-password', validate(S.resetPw), (req, res) => {
   const { token, password } = req.body;
   const data = _resetTokens.get(token);
   if (!data || data.expires < Date.now()) return res.status(400).json({ error: 'Geçersiz veya süresi dolmuş link' });
@@ -322,7 +362,7 @@ app.post('/api/reset-password', (req, res) => {
   res.json({ ok: true });
 });
 
-app.put('/api/profile', authMiddleware, (req, res) => {
+app.put('/api/profile', authMiddleware, validate(S.profile), (req, res) => {
   const { email, phone, currentPassword, newPassword } = req.body;
   const user = kullaniciBul(req.user.id);
   if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
@@ -347,7 +387,7 @@ app.put('/api/profile', authMiddleware, (req, res) => {
 app.get('/api/users', authMiddleware, adminMiddleware, (req, res) => res.json(tumKullanicilar()));
 app.get('/api/users/count', authMiddleware, adminMiddleware, (req, res) => res.json({ count: tumKullanicilar().length }));
 
-app.post('/api/users', authMiddleware, adminMiddleware, (req, res) => {
+app.post('/api/users', authMiddleware, adminMiddleware, validate(S.userAdd), (req, res) => {
   const { username, email, password, role } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Kullanıcı adı ve şifre gerekli' });
   if (kullaniciBulUsername(username)) return res.status(400).json({ error: 'Bu kullanıcı adı zaten kullanılıyor' });
@@ -356,7 +396,11 @@ app.post('/api/users', authMiddleware, adminMiddleware, (req, res) => {
 });
 
 app.delete('/api/users/:id', authMiddleware, adminMiddleware, (req, res) => {
-  kullaniciSil(Number(req.params.id));
+  const targetId = Number(req.params.id);
+  if (isNaN(targetId)) return res.status(400).json({ error: 'Geçersiz ID.' });
+  if (req.user.id === targetId) return res.status(400).json({ error: 'Kendi hesabınızı silemezsiniz.' });
+  kullaniciSil(targetId);
+  logEkle({ userId: req.user.id, action: 'user_sil', detail: String(targetId), ipAddress: getIP(req) });
   res.json({ ok: true });
 });
 
@@ -394,7 +438,7 @@ app.get('/api/debug-sakarya', authMiddleware, (req, res) => {
 });
 
 
-app.post('/api/ai-ara', authMiddleware, async (req, res) => {
+app.post('/api/ai-ara', authMiddleware, validate(S.aiAra), async (req, res) => {
   if (!GEMINI_API_KEY) {
     return res.status(503).json({ error: 'AI özelliği yapılandırılmamış.' });
   }
@@ -708,7 +752,7 @@ app.get('/api/stats', authMiddleware, (req, res) => {
 
 app.get('/api/blacklist', authMiddleware, adminMiddleware, (req, res) => res.json(_config?.BLACKLIST || []));
 
-app.post('/api/blacklist', authMiddleware, adminMiddleware, (req, res) => {
+app.post('/api/blacklist', authMiddleware, adminMiddleware, validate(S.blacklist), (req, res) => {
   const { kelime } = req.body;
   if (!kelime) return res.status(400).json({ error: 'Kelime gerekli' });
   if (_config && !_config.BLACKLIST.includes(kelime)) _config.BLACKLIST.push(kelime);
@@ -729,7 +773,7 @@ app.get('/api/sehirler', authMiddleware, (req, res) => {
   res.json({ sehirler: sehirler.sort() });
 });
 
-app.post('/api/ilan-olustur', authMiddleware, (req, res) => {
+app.post('/api/ilan-olustur', authMiddleware, validate(S.ilanOlustur), (req, res) => {
   const { metin } = req.body;
   if (!metin?.trim())      return res.status(400).json({ error: 'İlan metni boş olamaz' });
   if (metin.length > 1000) return res.status(400).json({ error: 'İlan metni en fazla 1000 karakter olabilir' });
@@ -778,7 +822,7 @@ app.get('/api/bots', authMiddleware, adminMiddleware, (req, res) => {
 });
 
 // Yeni bot ekle
-app.post('/api/bots', authMiddleware, adminMiddleware, (req, res) => {
+app.post('/api/bots', authMiddleware, adminMiddleware, validate(S.botEkle), (req, res) => {
   const { isim } = req.body;
   if (!isim?.trim()) return res.status(400).json({ error: 'Bot ismi gerekli' });
   const clientId = 'bot-' + Date.now();
@@ -879,10 +923,16 @@ for (const p of ['admin','panel','dashboard','login','wp-admin','wp-login.php','
 
 // ── Yönetim Paneli ──────────────────────────────
 app.get('/yonetim-lgn', ipWhitelist, (req, res) => {
+  setCsrfCookie(res); // CSRF token cookie'si ayarla
   res.sendFile(path.join(__dirname, '../../public/y-panel.html'));
 });
 
-app.post('/yonetim-lgn/giris', ipWhitelist, (req, res) => {
+app.post('/yonetim-lgn/giris', ipWhitelist, validate(S.adminLogin), (req, res) => {
+  // CSRF doğrulama (Double Submit Cookie)
+  if (!verifyCsrf(req)) {
+    secLog('csrf_fail', { ip: getIP(req), ua: req.get('User-Agent') });
+    return res.status(403).json({ error: 'Güvenlik doğrulaması başarısız. Sayfayı yenileyin.' });
+  }
   const ip   = getIP(req);
   const wait = bfWait(ip);
   if (wait > 0) return res.status(429).json({ error: `IP kilitli. ${wait} saniye bekleyin.`, wait });
@@ -948,6 +998,18 @@ app.use((err, req, res, next) => {
 
 function startServer(store, config, botManager, botOlustur, botDurdur, qrWaiters) {
   setStore(store, config, botManager, botOlustur, botDurdur, qrWaiters);
+
+  // IP Whitelist uyarısı: private/NAT IP'ler production'da değişebilir
+  if (ADMIN_WLIST.length > 0) {
+    const _privRe = [/^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./, /^127\./];
+    const privIPs = ADMIN_WLIST.filter(ip => _privRe.some(r => r.test(ip)));
+    if (privIPs.length) {
+      console.warn(`⚠️  [GÜVENLİK] ADMIN_IP_WHITELIST'te private IP var: ${privIPs.join(', ')}`);
+      console.warn('   Production\'da bu IP değişirse admin paneline erişim kesilir!');
+      console.warn('   Çözüm: Sabit public IP veya VPN kullanın, ya da ADMIN_IP_WHITELIST boş bırakın.');
+    }
+  }
+
   app.listen(PORT, () => console.log(`🌐 YükleGit paneli: http://localhost:${PORT}`));
 }
 

@@ -34,6 +34,10 @@ button:disabled{background:#475569;cursor:not-allowed}
   <div class="info" id="info"></div>
 </div>
 <script>
+function getCsrfToken(){
+  const m=document.cookie.split(';').find(c=>c.trim().startsWith('csrf_tok='));
+  return m?m.split('=').slice(1).join('=').trim():'';
+}
 async function giris(e){
   e.preventDefault();
   const btn=document.getElementById('btn');
@@ -45,7 +49,7 @@ async function giris(e){
   try{
     const res=await fetch('/yonetim-lgn/giris',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCsrfToken()},
       body:JSON.stringify({
         u:document.getElementById('usr').value,
         p:document.getElementById('pwd').value
