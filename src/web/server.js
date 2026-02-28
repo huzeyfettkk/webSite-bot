@@ -396,14 +396,15 @@ const normS = s => String(s||'')
 function sehirBul(input) {
   if (!input) return null;
   const ni = normS(input);
-  // Önce tam eşleşme
+  // Önce CITIES config'de tam eşleşme
   const tam = _config?.CITIES?.find(c => normS(c) === ni);
   if (tam) return tam;
-  // il_ilce'de de ara
-  const ilBilgi = getIlBilgisi(input);
-  if (ilBilgi.il !== null) return ilBilgi.il;
-  // İlçe olarak bul
-  for (const [il, ilceler] of Object.entries(IL_ILCE)) {
+  // İl mi? → ilin adını döndür (tüm ilçeler dahil edilecek)
+  for (const [il] of Object.entries(IL_ILCE)) {
+    if (normS(il) === ni) return il;
+  }
+  // İlçe mi? → ilçenin kendi adını döndür (sadece o ilçe aranacak)
+  for (const [, ilceler] of Object.entries(IL_ILCE)) {
     const bulunan = ilceler.find(i => normS(i) === ni);
     if (bulunan) return bulunan;
   }
