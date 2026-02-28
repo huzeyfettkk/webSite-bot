@@ -145,6 +145,8 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .ilanTime{font-size:11px;color:var(--muted);background:var(--bg);padding:3px 9px;border-radius:20px;border:1px solid var(--border);white-space:nowrap;flex-shrink:0}
 .ilanText{font-size:13.5px;line-height:1.75;color:var(--text);white-space:pre-wrap;word-break:break-word}
 .ilanText .hl{background:#dbeafe;color:#1e40af;font-weight:700;padding:0 3px;border-radius:3px}
+/* Kısmi eşleşme kartlarında hiçbir vurgu görünmesin */
+.ilanCardKismi .hl{background:transparent!important;color:inherit!important;font-weight:inherit!important;padding:0!important;border-radius:0!important}
 /* Satır bazlı render stilleri */
 .ilanTextSatir{white-space:pre-wrap;word-break:break-word}
 .satirEsles{display:block;color:var(--text);font-size:13.5px;line-height:1.75}
@@ -1090,9 +1092,10 @@ function renderIlanlar(ilanlar, matchedTerms=[], ilceler1=[], ilceler2=[]){
     });
 
     const opacityStyle = isKismi ? 'opacity:0.4;transition:opacity .2s' : '';
+    const kismiClass = isKismi ? ' ilanCardKismi' : '';
 
     return `
-    <div class="ilanCard" style="${opacityStyle}">
+    <div class="ilanCard${kismiClass}" style="${opacityStyle}">
       <div class="ilanMeta">
         <span class="ilanNum">İlan ${i+1}</span>
         <span class="ilanTime">⏱ ${timeAgo(ilan.timestamp)}</span>
