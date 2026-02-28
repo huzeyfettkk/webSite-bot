@@ -386,7 +386,6 @@ class IlanStore {
 
     for (const [, ilan] of this._store) {
       let matched = false;
-      let matchScore = 0;  // Sıralama: yüksek puan önce, sonra timestamp
 
       if (!city2) {
         // Tek şehir: cities listesinde veya metinde list1'den biri var mı?
@@ -395,24 +394,19 @@ class IlanStore {
           const t = ' ' + norm(ilan.text) + ' ';
           matched = list1.some(n => t.includes(' ' + n + ' '));
         }
-        if (matched) matchScore = 10;
       } else {
         // İki şehir: AYNI SATIRDA list1'den biri solda, list2'den biri sağda mı?
-        // linePairs ile kontrol (TAM EŞLEŞME = highest priority)
+        // linePairs ile kontrol (en güvenilir, yeni ilanlar)
         if (ilan.linePairs && ilan.linePairs.length > 0) {
           for (const pair of ilan.linePairs) {
             const normPair = pair.map(norm);
             const p1 = normPair.findIndex(c => list1.includes(c));
             const p2 = normPair.findIndex(c => list2.includes(c));
-            if (p1 !== -1 && p2 !== -1 && p1 < p2) { 
-              matched = true; 
-              matchScore = 30;  // ✅ Tam eşleşme: İstanbul → Samsun
-              break; 
-            }
+            if (p1 !== -1 && p2 !== -1 && p1 < p2) { matched = true; break; }
           }
         }
 
-        // linePairs yoksa metin bazlı satır kontrolü (KISMI EŞLEŞME)
+        // linePairs yoksa metin bazlı satır kontrolü
         if (!matched) {
           const lines = ilan.text.split(/[\n\r]+/).map(l => norm(l));
           for (const line of lines) {
@@ -426,34 +420,16 @@ class IlanStore {
             // list2'den herhangi biri daha sonra mı?
             for (const n of list2) {
               const idx = line.indexOf(n);
-              if (idx !== -1 && idx > earliest1) { 
-                matched = true; 
-                matchScore = 20;  // ⊕ Kısmi: İstanbul + diğer şehir
-                break; 
-              }
+              if (idx !== -1 && idx > earliest1) { matched = true; break; }
             }
             if (matched) break;
           }
         }
-
-        // Hiçbiri eşleşmezse list1 sadece tek başına mı?
-        if (!matched) {
-          const t = ' ' + norm(ilan.text) + ' ';
-          matched = list1.some(n => t.includes(' ' + n + ' '));
-          if (matched) matchScore = 10;  // ○ Tek şehir: İstanbul
-        }
       }
 
-      if (matched) results.push({ ...ilan, _matchScore: matchScore });
+      if (matched) results.push(ilan);
     }
-    
-    // Sıralama: Eşleşme Kalitesi (Score) DESC, Timestamp DESC
-    return results
-      .sort((a, b) => {
-        if (a._matchScore !== b._matchScore) return b._matchScore - a._matchScore;
-        return b.timestamp - a.timestamp;
-      })
-      .map(({ _matchScore, ...item }) => item);  // Geçici score alanınızı çıkar
+    return results.sort((a, b) => b.timestamp - a.timestamp);
   }
 
   _cleanup() {

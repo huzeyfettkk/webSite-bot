@@ -184,69 +184,53 @@ function ilanAra(sehir1, sehir2, ilceler1, ilceler2) {
     const sql = `SELECT * FROM ilanlar WHERE timestamp > ? ORDER BY timestamp DESC`;
     let rows = db.prepare(sql).all(since);
 
-    // ── İlanları filter et ve score hesapla ──
-    const rowsWithScore = rows.map(r => {
+    // 1. Adım: list1'den en az biri ilanın metninde geçiyor mu?
+    rows = rows.filter(r => {
       const normText = normStr(r.text);
-      let matchScore = 0;
+      return nList1.some(city => normText.includes(city));
+    });
 
-      // 1. Adım: list1'den en az biri var mı?
-      const hasCity1 = nList1.some(city => normText.includes(city));
-      if (!hasCity1) return null;  // Eşleşme yok, çıkar
+    // 2. Adım: Eğer varış belirtilmişse, list2 de ilanın metninde geçmeli
+    if (sehir2 && list2.length > 0) {
+      rows = rows.filter(r => {
+        const normText = normStr(r.text);
+        return nList2.some(city => normText.includes(city));
+      });
 
-      // Tek şehir araması
-      if (!sehir2 || list2.length === 0) {
-        matchScore = 10;
-        return { ...r, _matchScore: matchScore };
-      }
+      // 3. Adım: Aynı satırda list1'den biri SONRA list2'den biri geç mi?
+      // Bu sıralama önemli: başlangıç → varış
+      rows = rows.filter(r => {
+        const satirlar = r.text.split(/[\n\r]+/).map(s => normStr(s));
+        for (const satir of satirlar) {
+          // list1'den ilk eşleşen pozisyonu bul
+          let p1 = -1;
+          let firstCity1 = null;
+          for (const n of nList1) {
+            const idx = satir.indexOf(n);
+            if (idx !== -1 && (p1 === -1 || idx < p1)) {
+              p1 = idx;
+              firstCity1 = n;
+            }
+          }
+          if (p1 === -1) continue;
 
-      // İki şehir araması
-      const hasCity2 = nList2.some(city => normText.includes(city));
-      if (!hasCity2) return null;  // list2 yok, çıkar
+          // list2'den ilk eşleşen pozisyonu bul
+          let p2 = -1;
+          let firstCity2 = null;
+          for (const n of nList2) {
+            const idx = satir.indexOf(n);
+            if (idx !== -1 && (p2 === -1 || idx < p2)) {
+              p2 = idx;
+              firstCity2 = n;
+            }
+          }
 
-      // Her ikisi var. Şimdi aynı satırda ve sırada mı kontrol et?
-      const satirlar = r.text.split(/[\n\r]+/).map(s => normStr(s));
-      let isTameslesme = false;
-
-      for (const satir of satirlar) {
-        // list1'den ilk eşleşen pozisyonu bul
-        let p1 = -1;
-        for (const n of nList1) {
-          const idx = satir.indexOf(n);
-          if (idx !== -1 && (p1 === -1 || idx < p1)) p1 = idx;
+          // list2'den biri p1'den sonra mı?
+          if (p2 !== -1 && p2 > p1) return true;
         }
-        if (p1 === -1) continue;
-
-        // list2'den ilk eşleşen pozisyonu bul
-        let p2 = -1;
-        for (const n of nList2) {
-          const idx = satir.indexOf(n);
-          if (idx !== -1 && (p2 === -1 || idx < p2)) p2 = idx;
-        }
-
-        // list2'den biri p1'den sonra mı?
-        if (p2 !== -1 && p2 > p1) {
-          isTameslesme = true;
-          break;
-        }
-      }
-
-      // Score belirle
-      if (isTameslesme) {
-        matchScore = 30;  // ✅ Tam eşleşme: İstanbul → Samsun (aynı satırda)
-      } else {
-        matchScore = 20;  // ⊕ Kısmi: İstanbul + başka şehir
-      }
-
-      return { ...r, _matchScore: matchScore };
-    }).filter(Boolean);  // null olanları çıkar
-
-    // ── Sıralama: Score DESC, sonra Timestamp DESC ──
-    rows = rowsWithScore
-      .sort((a, b) => {
-        if (a._matchScore !== b._matchScore) return b._matchScore - a._matchScore;
-        return b.timestamp - a.timestamp;
-      })
-      .map(({ _matchScore, ...item }) => item);  // Score alanını çıkar
+        return false;
+      });
+    }
 
     if (logger) {
       logger.ilanSearch(sehir1 || '?', sehir2 || '?', rows.length, Date.now() - startTime);

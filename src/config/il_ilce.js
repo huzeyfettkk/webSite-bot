@@ -110,7 +110,7 @@ function getIlBilgisi(sehir) {
   // İlçe mi? Hangi ile bağlı?
   for (const [il, ilceler] of Object.entries(IL_ILCE)) {
     if (ilceler.some(i => normStr(i) === ns)) {
-      return { il, ilceler: [il, ...ilceler] };  // ✅ FIX: İlin TÜM ilçelerini döndür, sadece girilen ilçeyi değil
+      return { il, ilceler: [sehir] };
     }
   }
   return { il: null, ilceler: [sehir] };
