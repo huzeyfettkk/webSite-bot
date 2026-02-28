@@ -14,6 +14,8 @@ const session        = require('express-session');
 const passport       = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const nodemailer     = require('nodemailer');
+const xss            = require('xss');
+const { secLog }     = require('../utils/security-logger');
 const {
   ilanEkle, ilanAra, ilanSayisi,
   kullaniciBul, kullaniciBulUsername, kullaniciBulEmail,
@@ -25,6 +27,9 @@ const {
 } = require('../database/db');
 
 const app    = express();
+const helmet = require('helmet');
+app.use(helmet({ contentSecurityPolicy: false }));
+
 const PORT   = process.env.PORT || 3000;
 const SECRET = process.env.JWT_SECRET || 'yuklegit-secret-2024';
 
@@ -42,6 +47,109 @@ const _verifyTokens = new Map();
 const _resetTokens  = new Map();
 function genToken() { return crypto.randomBytes(32).toString('hex'); }
 function getIP(req) { return (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); }
+
+// ── Admin Güvenlik Yapılandırması ────────────────
+const ADMIN_SECRET = process.env.ADMIN_JWT_SECRET || SECRET + '_adm';
+const ADMIN_WLIST  = (process.env.ADMIN_IP_WHITELIST || '').split(',').map(s => s.trim()).filter(Boolean);
+const ADM_COOKIE   = 'adm_tok';
+const ADM_TTL      = 4 * 60 * 60; // 4 saat (saniye)
+
+let _admSid = null; // Tek admin oturum ID'si
+
+// Brute force koruması: ip → { fails, lockedUntil, mult }
+const _bfMap = new Map();
+const BF_MAX  = 5;
+const BF_BASE = 15 * 60 * 1000; // 15 dakika (ms)
+
+function bfWait(ip) {
+  const e = _bfMap.get(ip);
+  if (!e || Date.now() >= e.lockedUntil) return 0;
+  return Math.ceil((e.lockedUntil - Date.now()) / 1000);
+}
+function bfFail(ip) {
+  let e = _bfMap.get(ip) || { fails: 0, lockedUntil: 0, mult: 1 };
+  e.fails++;
+  if (e.fails >= BF_MAX) {
+    e.lockedUntil = Date.now() + BF_BASE * e.mult;
+    e.mult = Math.min(e.mult * 2, 64); // her kilitlenmede süre 2 katına çıkar
+    e.fails = 0;
+  }
+  _bfMap.set(ip, e);
+}
+function bfReset(ip) { _bfMap.delete(ip); }
+
+// Rate limiter: ip → { count, resetAt }
+const _rlMap = new Map();
+function rlOver(ip, max, winMs) {
+  const now = Date.now();
+  let e = _rlMap.get(ip);
+  if (!e || now > e.resetAt) { e = { count: 0, resetAt: now + winMs }; _rlMap.set(ip, e); }
+  return ++e.count > max;
+}
+
+// Cookie parse (cookie-parser bağımlılığı olmadan)
+function parseCookie(req, name) {
+  const raw = req.headers.cookie || '';
+  const m = raw.split(';').find(c => c.trim().startsWith(name + '='));
+  return m ? decodeURIComponent(m.split('=').slice(1).join('=').trim()) : null;
+}
+
+// IP whitelist — ADMIN_WLIST boşsa herkese açık
+function ipWhitelist(req, res, next) {
+  if (!ADMIN_WLIST.length) return next();
+  if (!ADMIN_WLIST.includes(getIP(req))) return res.status(404).end();
+  next();
+}
+
+// ── JWT Blacklist (logout & session invalidation) ──
+const _jwtBlacklist = new Map(); // jti → expiresAtMs
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _jwtBlacklist) if (now > v) _jwtBlacklist.delete(k);
+}, 3_600_000); // saatte bir temizle
+
+function blacklistToken(token) {
+  try {
+    const p = jwt.decode(token);
+    if (p?.jti && p?.exp) _jwtBlacklist.set(p.jti, p.exp * 1000);
+  } catch {}
+}
+function isBlacklisted(jti) {
+  if (!jti) return false;
+  const exp = _jwtBlacklist.get(jti);
+  if (!exp) return false;
+  if (Date.now() > exp) { _jwtBlacklist.delete(jti); return false; }
+  return true;
+}
+
+// jti (JWT ID) ile token üret — blacklist için gerekli
+function signJWT(payload, opts = {}) {
+  return jwt.sign({ ...payload, jti: crypto.randomBytes(8).toString('hex') }, SECRET, opts);
+}
+
+// ── XSS Sanitizasyon ────────────────────────────
+const _xssOpts = { whiteList: {}, stripIgnoreTag: true, stripIgnoreTagBody: ['script','style'] };
+function sanitizeDeep(v) {
+  if (typeof v === 'string') return xss(v, _xssOpts);
+  if (Array.isArray(v))      return v.map(sanitizeDeep);
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const k of Object.keys(v)) o[k] = sanitizeDeep(v[k]);
+    return o;
+  }
+  return v;
+}
+
+// ── SQL Injection Tespiti ────────────────────────
+// better-sqlite3 prepared statement kullandığı için injection imkânsız;
+// bu katman WAF görevi görerek şüpheli istekleri loglar ve reddeder.
+const _SQLI_RE = /--|\/\*|\*\/|\bUNION\b[\s\S]{0,30}\bSELECT\b|\bOR\b\s+\d+\s*=\s*\d+|\bxp_|\bDROP\b\s+\bTABLE\b/gi;
+function hasSQLi(v) {
+  if (typeof v === 'string') { _SQLI_RE.lastIndex = 0; return _SQLI_RE.test(v); }
+  if (Array.isArray(v))      return v.some(hasSQLi);
+  if (v && typeof v === 'object') return Object.values(v).some(hasSQLi);
+  return false;
+}
 
 async function sendVerifyMail(email, username, token) {
   const link = `${BASE_URL}/verify?token=${token}`;
@@ -64,6 +172,48 @@ async function sendResetMail(email, username, token) {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '../../public')));
+
+// Rate limiting — statik dosyalar bu noktaya ulaşmaz
+app.use((req, res, next) => {
+  if (!rlOver(getIP(req), 10, 60_000)) return next();
+  const isApi = req.path.startsWith('/api/') || req.path.startsWith('/yonetim-lgn/');
+  if (isApi) {
+    secLog('rate_limit', { ip: getIP(req), path: req.path, ua: req.get('User-Agent') });
+    return res.status(429).json({ error: 'Çok fazla istek. Lütfen bekleyin.' });
+  }
+  return res.status(429).send('<h2>429 — Çok fazla istek. Lütfen bekleyin.</h2>');
+});
+
+// XSS sanitizasyon + SQL injection tespiti — POST/PUT/PATCH body'leri
+app.use((req, res, next) => {
+  if (req.body && ['POST', 'PUT', 'PATCH'].includes(req.method)) {
+    if (hasSQLi(req.body)) {
+      secLog('sqli_attempt', { ip: getIP(req), path: req.path, ua: req.get('User-Agent') });
+      return res.status(400).json({ error: 'Geçersiz istek.' });
+    }
+    req.body = sanitizeDeep(req.body);
+  }
+  next();
+});
+
+// Ek HTTP güvenlik başlıkları (helmet'a ek)
+app.use((req, res, next) => {
+  res.setHeader('Permissions-Policy',          'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Referrer-Policy',             'strict-origin-when-cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy',  'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy','same-origin');
+  next();
+});
+
+// Production: HTTP → HTTPS zorla
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] !== 'https')
+      return res.redirect(301, 'https://' + req.headers.host + req.url);
+    next();
+  });
+}
+
 app.use(session({ secret: SECRET, resave: false, saveUninitialized: false }));
 app.use(passport.initialize());
 app.use(passport.session());
@@ -99,8 +249,12 @@ function authMiddleware(req, res, next) {
   // Header'dan veya query param'dan token al (SSE için query param gerekli)
   const token = req.headers.authorization?.split(' ')[1] || req.query.token;
   if (!token) return res.status(401).json({ error: 'Token gerekli' });
-  try { req.user = jwt.verify(token, SECRET); next(); }
-  catch { res.status(401).json({ error: 'Geçersiz token' }); }
+  try {
+    const payload = jwt.verify(token, SECRET);
+    if (isBlacklisted(payload.jti)) return res.status(401).json({ error: 'Oturum sonlandırıldı. Tekrar giriş yapın.' });
+    req.user = payload;
+    next();
+  } catch { res.status(401).json({ error: 'Geçersiz token' }); }
 }
 
 function adminMiddleware(req, res, next) {
@@ -120,7 +274,7 @@ app.post('/api/login', (req, res) => {
     return res.status(403).json({ error: 'E-posta adresiniz henüz doğrulanmadı.', needsVerification: true });
 
   logEkle({ userId: user.id, action: 'login', detail: user.username, ipAddress: getIP(req) });
-  const token = jwt.sign({ id: user.id, username: user.username, email: user.email, role: user.role }, SECRET, { expiresIn: '30d' });
+  const token = signJWT({ id: user.id, username: user.username, email: user.email, role: user.role }, { expiresIn: '30d' });
   res.json({ token, user: { id: user.id, username: user.username, email: user.email, role: user.role, phone: user.phone } });
 });
 
@@ -133,7 +287,7 @@ app.post('/api/register', async (req, res) => {
   if (kullaniciBulUsername(username)) return res.status(400).json({ error: 'Bu kullanıcı adı zaten alınmış' });
   if (kullaniciBulEmail(email))       return res.status(400).json({ error: 'Bu e-posta zaten kayıtlı' });
 
-  const newId  = kullaniciEkle({ username, email, phone, password: bcrypt.hashSync(password, 10), role: 'user', verified: false });
+  const newId  = kullaniciEkle({ username, email, phone, password: bcrypt.hashSync(password, 12), role: 'user', verified: false });
   const vToken = genToken();
   _verifyTokens.set(vToken, { userId: newId, expires: Date.now() + 24*60*60*1000 });
   try { await sendVerifyMail(email, username, vToken); } catch(e) { console.warn('Mail gönderilemedi:', e.message); }
@@ -163,7 +317,7 @@ app.post('/api/reset-password', (req, res) => {
   const data = _resetTokens.get(token);
   if (!data || data.expires < Date.now()) return res.status(400).json({ error: 'Geçersiz veya süresi dolmuş link' });
   if (!password || password.length < 6)  return res.status(400).json({ error: 'Şifre en az 6 karakter olmalı' });
-  kullaniciGuncelle(data.userId, { password: bcrypt.hashSync(password, 10) });
+  kullaniciGuncelle(data.userId, { password: bcrypt.hashSync(password, 12) });
   _resetTokens.delete(token);
   res.json({ ok: true });
 });
@@ -182,7 +336,7 @@ app.put('/api/profile', authMiddleware, (req, res) => {
     if (!currentPassword || !bcrypt.compareSync(currentPassword, user.password))
       return res.status(400).json({ error: 'Mevcut şifre hatalı' });
     if (newPassword.length < 6) return res.status(400).json({ error: 'Yeni şifre en az 6 karakter olmalı' });
-    updates.password = bcrypt.hashSync(newPassword, 10);
+    updates.password = bcrypt.hashSync(newPassword, 12);
   }
   kullaniciGuncelle(user.id, updates);
   const u = kullaniciBul(user.id);
@@ -191,12 +345,13 @@ app.put('/api/profile', authMiddleware, (req, res) => {
 
 // ── Kullanıcı Yönetimi (Admin) ──────────────────
 app.get('/api/users', authMiddleware, adminMiddleware, (req, res) => res.json(tumKullanicilar()));
+app.get('/api/users/count', authMiddleware, adminMiddleware, (req, res) => res.json({ count: tumKullanicilar().length }));
 
 app.post('/api/users', authMiddleware, adminMiddleware, (req, res) => {
   const { username, email, password, role } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Kullanıcı adı ve şifre gerekli' });
   if (kullaniciBulUsername(username)) return res.status(400).json({ error: 'Bu kullanıcı adı zaten kullanılıyor' });
-  const newId = kullaniciEkle({ username, email: email||'', password: bcrypt.hashSync(password, 10), role: role||'user', verified: true });
+  const newId = kullaniciEkle({ username, email: email||'', password: bcrypt.hashSync(password, 12), role: role||'user', verified: true });
   res.json(kullaniciBul(newId));
 });
 
@@ -213,6 +368,9 @@ app.get('/api/logs', authMiddleware, adminMiddleware, (req, res) => {
 
 // ── Logout Log ──────────────────────────────────
 app.post('/api/logout', authMiddleware, (req, res) => {
+  // Token'ı blacklist'e ekle — artık geçersiz
+  const token = req.headers.authorization?.split(' ')[1];
+  if (token) blacklistToken(token);
   logEkle({ userId: req.user.id, action: 'logout', detail: req.user.username, ipAddress: getIP(req) });
   res.json({ ok: true });
 });
@@ -596,7 +754,7 @@ app.get('/auth/google/callback',
   (req, res) => {
     const user = req.user;
     logEkle({ userId: user.id, action: 'login', detail: 'google:' + user.username, ipAddress: getIP(req) });
-    const token = jwt.sign({ id: user.id, username: user.username, email: user.email, role: user.role }, SECRET, { expiresIn: '30d' });
+    const token = signJWT({ id: user.id, username: user.username, email: user.email, role: user.role }, { expiresIn: '30d' });
     res.redirect(`/?google_token=${token}&user=${encodeURIComponent(JSON.stringify({ id: user.id, username: user.username, email: user.email, phone: user.phone, role: user.role, avatar: user.avatar }))}`);
   }
 );
@@ -711,6 +869,81 @@ app.get('/api/bots/:clientId/qr', authMiddleware, adminMiddleware, (req, res) =>
     const idx = waiters.indexOf(res);
     if (idx !== -1) waiters.splice(idx, 1);
   });
+});
+
+// ── Honeypot rotaları (bot tuzakları) ───────────
+for (const p of ['admin','panel','dashboard','login','wp-admin','wp-login.php','phpmyadmin','manager']) {
+  app.all('/' + p,        (_r, rs) => rs.status(200).set('Content-Type', 'text/html').send(''));
+  app.all('/' + p + '/*', (_r, rs) => rs.status(200).set('Content-Type', 'text/html').send(''));
+}
+
+// ── Yönetim Paneli ──────────────────────────────
+app.get('/yonetim-lgn', ipWhitelist, (req, res) => {
+  res.sendFile(path.join(__dirname, '../../public/y-panel.html'));
+});
+
+app.post('/yonetim-lgn/giris', ipWhitelist, (req, res) => {
+  const ip   = getIP(req);
+  const wait = bfWait(ip);
+  if (wait > 0) return res.status(429).json({ error: `IP kilitli. ${wait} saniye bekleyin.`, wait });
+
+  const { u, p } = req.body;
+  if (!u || !p) return res.status(400).json({ error: 'Bilgiler eksik.' });
+
+  const user  = kullaniciBulUsername(u) || kullaniciBulEmail(u);
+  const valid = user && user.role === 'admin' && user.password && bcrypt.compareSync(p, user.password);
+
+  if (!valid) {
+    bfFail(ip);
+    const w2 = bfWait(ip);
+    secLog('admin_login_fail', { ip, user: u, ua: req.get('User-Agent'), locked: w2 > 0 });
+    if (w2 > 0) return res.status(429).json({ error: `Çok fazla hatalı deneme. ${w2} saniye kilitli.`, wait: w2 });
+    return res.status(401).json({ error: 'Kullanıcı adı veya şifre hatalı.' });
+  }
+
+  bfReset(ip);
+  secLog('admin_login_ok', { ip, user: u, ua: req.get('User-Agent') });
+  // Tek oturum: yeni session ID eski oturumu geçersiz kılar
+  _admSid = crypto.randomBytes(16).toString('hex');
+
+  // HTTP-only admin cookie (4 saat, SameSite=Strict)
+  const admTok = jwt.sign({ sid: _admSid, id: user.id }, ADMIN_SECRET, { expiresIn: ADM_TTL });
+  res.setHeader('Set-Cookie',
+    `${ADM_COOKIE}=${admTok}; HttpOnly; SameSite=Strict; Max-Age=${ADM_TTL}; Path=/`
+  );
+
+  // Ana uygulama için JWT (mevcut auth sistemi — 4 saatlik)
+  const appTok  = signJWT({ id: user.id, username: user.username, email: user.email, role: user.role }, { expiresIn: '4h' });
+  const userEnc = encodeURIComponent(JSON.stringify({
+    id: user.id, username: user.username, email: user.email, role: user.role, phone: user.phone,
+  }));
+
+  logEkle({ userId: user.id, action: 'admin_login', detail: u, ipAddress: ip });
+  res.json({ ok: true, redirect: `/?google_token=${appTok}&user=${userEnc}` });
+});
+
+app.get('/yonetim-lgn/cikis', (req, res) => {
+  _admSid = null;
+  res.setHeader('Set-Cookie', `${ADM_COOKIE}=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/`);
+  res.redirect('/yonetim-lgn');
+});
+
+// ── Security.txt ─────────────────────────────────
+app.get('/.well-known/security.txt', (req, res) => {
+  res.type('text/plain').send(
+    'Contact: mailto:yuklegit.iletisim@gmail.com\n' +
+    'Expires: 2026-12-31T00:00:00.000Z\n' +
+    'Preferred-Languages: tr, en\n'
+  );
+});
+
+// ── Global Hata Yakalayıcı ───────────────────────
+// Stack trace ve dahili bilgileri gizler
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error('[HATA]', err);
+  secLog('server_error', { ip: getIP(req), path: req.path, message: err.message });
+  res.status(500).json({ error: 'Bir hata oluştu. Lütfen tekrar deneyin.' });
 });
 
 function startServer(store, config, botManager, botOlustur, botDurdur, qrWaiters) {

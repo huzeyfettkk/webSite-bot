@@ -5,3 +5,4 @@ yuklegit.db-shm
 yuklegit.db-wal
 .wwebjs_auth/
 *.log
+logs/*.log

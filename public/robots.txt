@@ -1,5 +1,6 @@
 User-agent: *
 Allow: /
 Disallow: /api/
+Disallow: /yonetim-lgn
 
 Sitemap: https://yuklegit.tr/sitemap.xml

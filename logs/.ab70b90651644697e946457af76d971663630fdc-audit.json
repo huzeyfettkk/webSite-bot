@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 30
+    },
+    "auditLog": "C:\\Users\\Hüzeyfe\\Desktop\\whatsapp-bottttttt\\logs\\.ab70b90651644697e946457af76d971663630fdc-audit.json",
+    "files": [
+        {
+            "date": 1772315462500,
+            "name": "C:\\Users\\Hüzeyfe\\Desktop\\whatsapp-bottttttt\\logs\\security-2026-03-01.log",
+            "hash": "6fb43358c39d8ed3fc29f9e2415e8091cac37fa42c7abb7d959f05b5118ebae9"
+        }
+    ],
+    "hashType": "sha256"
+}

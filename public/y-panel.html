@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Giriş</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#0f172a;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.box{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:36px 32px;width:100%;max-width:360px}
+h1{color:#f1f5f9;font-size:18px;font-weight:700;margin-bottom:24px;letter-spacing:.3px}
+label{display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px}
+input{width:100%;padding:10px 13px;background:#0f172a;border:1.5px solid #334155;border-radius:8px;color:#f1f5f9;font-size:14px;outline:none;margin-bottom:14px;transition:border-color .2s}
+input:focus{border-color:#3b82f6}
+button{width:100%;padding:11px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;transition:background .2s;letter-spacing:.3px}
+button:hover{background:#1d4ed8}
+button:disabled{background:#475569;cursor:not-allowed}
+.err{margin-top:12px;padding:9px 13px;background:#450a0a;border:1px solid #7f1d1d;color:#fca5a5;border-radius:7px;font-size:13px;display:none}
+.info{color:#475569;font-size:11px;text-align:center;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>🔐 Yönetim Girişi</h1>
+  <form id="form" onsubmit="giris(event)">
+    <label>Kullanıcı Adı</label>
+    <input type="text" id="usr" autocomplete="username" required>
+    <label>Şifre</label>
+    <input type="password" id="pwd" autocomplete="current-password" required>
+    <button type="submit" id="btn">Giriş Yap</button>
+    <div class="err" id="err"></div>
+  </form>
+  <div class="info" id="info"></div>
+</div>
+<script>
+async function giris(e){
+  e.preventDefault();
+  const btn=document.getElementById('btn');
+  const err=document.getElementById('err');
+  const info=document.getElementById('info');
+  err.style.display='none';
+  btn.disabled=true;
+  btn.textContent='Doğrulanıyor...';
+  try{
+    const res=await fetch('/yonetim-lgn/giris',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        u:document.getElementById('usr').value,
+        p:document.getElementById('pwd').value
+      })
+    });
+    const d=await res.json();
+    if(res.ok && d.ok){
+      info.textContent='Yönlendiriliyor...';
+      info.style.color='#4ade80';
+      window.location.href=d.redirect;
+    } else {
+      err.textContent=d.error||'Giriş başarısız.';
+      err.style.display='block';
+      if(d.wait){
+        let s=d.wait;
+        const t=setInterval(()=>{
+          btn.textContent=`Bekle (${--s}s)`;
+          if(s<=0){clearInterval(t);btn.disabled=false;btn.textContent='Giriş Yap';}
+        },1000);
+      } else {
+        btn.disabled=false;
+        btn.textContent='Giriş Yap';
+      }
+    }
+  }catch(ex){
+    err.textContent='Sunucu hatası.';
+    err.style.display='block';
+    btn.disabled=false;
+    btn.textContent='Giriş Yap';
+  }
+}
+</script>
+</body>
+</html>
