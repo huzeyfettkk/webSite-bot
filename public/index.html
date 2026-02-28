@@ -14,6 +14,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>YükleGit — Lojistik İlan Takip</title>
+<script>if(localStorage.getItem('yg_tema')==='dark')document.documentElement.classList.add('dark');</script>
   <meta name="description" content="YükleGit ile Türkiye genelindeki güncel nakliye ve yük ilanlarını anlık takip edin. Şehir bazlı arama yapın, lojistik fırsatları kaçırmayın.">
   <meta name="keywords" content="lojistik ilanları, nakliye ilanları, yük ilanları, kamyon ilanları, Türkiye lojistik, taşımacılık ilanları, yüklegit">
   <meta name="robots" content="index, follow">
@@ -36,12 +37,32 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#0d1117;--surface:#161b27;--border:#252e45;--text:#dde6f5;--muted:#6b7fa3;
-  --accent:#3b82f6;--accent-h:#2563eb;--success:#10b981;--danger:#ef4444;
-  --sidebar:#0a0e18;--sidebar-t:#7b92c4;
-  --radius:10px;--shadow:0 1px 8px rgba(0,0,0,.35);--shadow-md:0 4px 20px rgba(0,0,0,.45);
+  --bg:#eef2f7;--surface:#f8fafc;--border:#dde4f0;--text:#1e2d4a;--muted:#64748b;
+  --accent:#2563eb;--accent-h:#1d4ed8;--success:#059669;--danger:#dc2626;
+  --sidebar:#0f1d3a;--sidebar-t:#7b92c4;
+  --radius:10px;--shadow:0 1px 8px rgba(15,29,58,.07);--shadow-md:0 4px 20px rgba(15,29,58,.10);
   --sidebar-w:220px;
 }
+html.dark{
+  --bg:#0d1117;--surface:#161b27;--border:#252e45;--text:#dde6f5;--muted:#6b7fa3;
+  --accent:#3b82f6;--accent-h:#2563eb;--success:#10b981;--danger:#ef4444;
+  --sidebar:#0a0e18;
+  --shadow:0 1px 8px rgba(0,0,0,.35);--shadow-md:0 4px 20px rgba(0,0,0,.45);
+}
+html.dark .btnGoogle{background:var(--surface)!important;color:var(--text)!important}
+html.dark .btnGoogle:hover{background:#1e2538!important}
+html.dark .liveBtn.active{background:rgba(16,185,129,.12)!important}
+html.dark .ilanText .hl{background:#1e3a5f!important;color:#93c5fd!important}
+html.dark .sehirTag{background:#1a2d50!important;border-color:#2d4a7a!important;color:#93c5fd!important}
+html.dark .sehirChip.aktif{background:#1a2d50!important;border-color:var(--accent)!important;color:#93c5fd!important}
+html.dark .roleBadge.admin{background:#1a2d50!important;color:#93c5fd!important}
+html.dark .roleBadge.user{background:#064e3b!important;color:#34d399!important}
+html.dark .profileMsg.ok{background:#064e3b!important;color:#34d399!important;border-color:#065f46!important}
+html.dark .telLink,html.dark .satirSoluk .telLink,html.dark .satirTers .telLink{background:#064e3b!important;border-color:#065f46!important;color:#34d399!important}
+html.dark .actionBadge.search{background:#1a2d50!important;color:#93c5fd!important}
+html.dark .phoneNote{background:#064e3b!important;border-color:#065f46!important;color:#34d399!important}
+html.dark #pwaCard{background:linear-gradient(135deg,#1a2d50,#1e3a8a)!important;border-color:#3b82f6!important}
+html.dark #pwaCard .statValue{color:#93c5fd!important}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html{height:100%}
 body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
@@ -108,7 +129,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .pageSubtitle{color:var(--muted);font-size:13px;margin-top:3px}
 
 /* Stats */
-.statsGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+.statsGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
 .statCard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
 .statLabel{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px}
 .statValue{font-family:'Outfit',sans-serif;font-size:28px;font-weight:700}
@@ -342,7 +363,6 @@ tr:hover td{background:#f8faff}
   .dualRealInput{flex:1;min-width:70px}
 
   .statsGrid{grid-template-columns:1fr 1fr;gap:10px}
-  .statsGrid .statCard:last-child{grid-column:1/-1}
   .statValue{font-size:24px}
 
   /* Arama kutusu mobil */
@@ -367,8 +387,7 @@ tr:hover td{background:#f8faff}
 }
 
 @media(max-width:480px){
-  .statsGrid{grid-template-columns:1fr}
-  .statsGrid .statCard:last-child{grid-column:auto}
+  .statsGrid{grid-template-columns:1fr 1fr}
   .searchDualLabel{display:none} /* çok dar ekranda label gizle */
   .searchBtnGroup .btnSearch,
   .searchBtnGroup .btnAI{flex:1}
@@ -503,6 +522,16 @@ tr:hover td{background:#f8faff}
               <span class="toggleSlider"></span>
             </label>
             <span style="font-size:13px;font-weight:600;color:var(--text)" id="bildirimKartText">Kapalı</span>
+          </div>
+        </div>
+        <div class="statCard" style="cursor:pointer" onclick="document.getElementById('temaToggleCheck').click()" id="temaKart">
+          <div class="statLabel" id="temaKartLabel">☀️ Tema</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+            <label class="toggle" onclick="event.stopPropagation()">
+              <input type="checkbox" id="temaToggleCheck" onchange="toggleTema()">
+              <span class="toggleSlider"></span>
+            </label>
+            <span style="font-size:13px;font-weight:600;color:var(--text)" id="temaKartText">Açık</span>
           </div>
         </div>
       </div>
@@ -1905,6 +1934,24 @@ async function botSilOnay(clientId, isim){
 }
 
 // Başlat
+function toggleTema(){
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('yg_tema', isDark ? 'dark' : 'light');
+  document.getElementById('temaToggleCheck').checked = isDark;
+  document.getElementById('temaKartText').textContent = isDark ? 'Koyu' : 'Açık';
+  document.getElementById('temaKartLabel').textContent = isDark ? '🌙 Tema' : '☀️ Tema';
+}
+// Tema kartını sayfa yüklenince senkronize et
+(function initTema(){
+  const isDark = document.documentElement.classList.contains('dark');
+  const chk = document.getElementById('temaToggleCheck');
+  const txt = document.getElementById('temaKartText');
+  const lbl = document.getElementById('temaKartLabel');
+  if(chk) chk.checked = isDark;
+  if(txt) txt.textContent = isDark ? 'Koyu' : 'Açık';
+  if(lbl) lbl.textContent = isDark ? '🌙 Tema' : '☀️ Tema';
+})();
+
 if(token&&currentUser){initApp();}
 </script>
   <!-- PWA Install Banner -->
