@@ -370,6 +370,8 @@ function tumKullanicilar() {
 }
 
 function kullaniciSil(id) {
+  db.prepare('DELETE FROM consents WHERE userId = ?').run(id);
+  db.prepare('DELETE FROM logs WHERE userId = ?').run(id);
   db.prepare('DELETE FROM users WHERE id = ?').run(id);
 }
 

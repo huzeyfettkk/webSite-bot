@@ -215,7 +215,7 @@ app.use(express.static(path.join(__dirname, '../../public')));
 
 // Rate limiting — statik dosyalar bu noktaya ulaşmaz
 app.use((req, res, next) => {
-  if (!rlOver(getIP(req), 10, 60_000)) return next();
+  if (!rlOver(getIP(req), 200, 60_000)) return next();
   const isApi = req.path.startsWith('/api/') || req.path.startsWith('/yonetim-lgn/');
   if (isApi) {
     secLog('rate_limit', { ip: getIP(req), path: req.path, ua: req.get('User-Agent') });
@@ -401,6 +401,16 @@ app.delete('/api/users/:id', authMiddleware, adminMiddleware, (req, res) => {
   if (req.user.id === targetId) return res.status(400).json({ error: 'Kendi hesabınızı silemezsiniz.' });
   kullaniciSil(targetId);
   logEkle({ userId: req.user.id, action: 'user_sil', detail: String(targetId), ipAddress: getIP(req) });
+  res.json({ ok: true });
+});
+
+// ── Kendi Hesabını Silme (Normal Kullanıcı) ─────
+app.delete('/api/account', authMiddleware, (req, res) => {
+  const userId = req.user.id;
+  if (req.user.role === 'admin') return res.status(400).json({ error: 'Admin hesabı silinemez.' });
+  const tkn = req.headers.authorization?.split(' ')[1];
+  if (tkn) blacklistToken(tkn);
+  kullaniciSil(userId);
   res.json({ ok: true });
 });
 

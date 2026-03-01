@@ -664,6 +664,19 @@ tr:hover td{background:#f8faff}
             <div class="profileMsg" id="passMsg" style="grid-column:1/-1"></div>
           </div>
         </div>
+
+        <div class="profileCard" style="grid-column:1/-1;border:1.5px solid #fecaca">
+          <div class="profileHeader" style="border-bottom-color:#fecaca"><div class="profileTitle" style="color:var(--danger)">Tehlikeli Bölge</div></div>
+          <div class="profileBody">
+            <p style="font-size:13.5px;color:var(--muted);margin-bottom:20px;line-height:1.7">
+              Hesabınızı sildiğinizde profiliniz, arama geçmişiniz ve sistemde kayıtlı tüm kişisel verileriniz kalıcı olarak silinir.
+              Bu işlem <strong style="color:var(--danger)">geri alınamaz</strong>.
+            </p>
+            <button onclick="hesapSilOnay()" style="background:var(--danger);color:white;border:none;border-radius:var(--radius);padding:11px 24px;font-family:'Outfit',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .15s" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+              Hesabımı Kalıcı Olarak Sil
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -915,14 +928,18 @@ async function rizaOnayla(){
   if(!_riza1||!_riza2)return;
   try{
     await api('/api/consent/save',{method:'POST'});
+    if(currentUser) localStorage.setItem('yg_consented_'+currentUser.id,'1');
   }catch(e){console.warn('Rıza kaydedilemedi',e);}
   document.getElementById('rizaModal').style.display='none';
   _baslatApp();
 }
 async function checkConsent(){
+  // Kullanıcıya özel key — API çağrısı yapmadan anında kontrol
+  if(currentUser && localStorage.getItem('yg_consented_'+currentUser.id)==='1') return true;
   try{
     const d=await api('/api/consent/check');
-    return d&&d.hasConsent;
+    if(d&&d.hasConsent && currentUser) localStorage.setItem('yg_consented_'+currentUser.id,'1');
+    return !!(d&&d.hasConsent);
   }catch(e){return false;}
 }
 function gosterRizaModali(){
@@ -1006,7 +1023,11 @@ function logout(){
 
 async function initApp(){
   document.getElementById('authWrap').style.display='none';
-  // Rıza kontrolü — geçmemişse modal göster, geçmişse direkt başlat
+  // Rıza daha önce verilmişse (localStorage'da var) anında başlat — API bekleme yok
+  if(currentUser && localStorage.getItem('yg_consented_'+currentUser.id)==='1'){
+    _baslatApp(); return;
+  }
+  // İlk kez veya yeni cihaz: DB'yi kontrol et
   const consented=await checkConsent();
   if(!consented){gosterRizaModali();return;}
   _baslatApp();
@@ -1018,12 +1039,18 @@ function _baslatApp(){
   document.getElementById('userRoleDisplay').textContent=currentUser.role==='admin'?'Admin':'Kullanıcı';
   document.getElementById('userAvatar').textContent=currentUser.username[0].toUpperCase();
   if(currentUser.role==='admin'){document.getElementById('adminNav').style.display='block';}
-  loadStats();loadIlanlar();
+  loadStats();
+  // Kaydedilmiş filtreleri önce uygula, ardından tek seferde ilan yükle
+  try{
+    const _raw=localStorage.getItem('yg_filters');
+    if(_raw){const _f=JSON.parse(_raw);if(Array.isArray(_f.nereden))dualState.nereden=_f.nereden;if(Array.isArray(_f.nereye))dualState.nereye=_f.nereye;renderDualTags('nereden');renderDualTags('nereye');}
+  }catch(e){}
+  if(dualState.nereden.length||dualState.nereye.length) araIlanlar(); else loadIlanlar();
   if(bildirimAktif && seciliSehirler.length>0) baslatBildirimKontrol();
   // Bildirim kart durumunu güncelle
   setTimeout(loadProfilBildirim, 300);
-  // Şehir önerileri için listeyi yükle
-  api('/api/sehirler').then(d=>{ if(d&&d.sehirler){ window._tumSehirler=d.sehirler; loadSearchFilters(); } });
+  // Şehir önerileri için listeyi yükle (artık loadSearchFilters tetiklenmiyor — filtreler yukarıda uygulandı)
+  api('/api/sehirler').then(d=>{ if(d&&d.sehirler){ window._tumSehirler=d.sehirler; } });
   if (!currentUser.phone || !currentUser.phone.trim()) {
     document.getElementById('telefonBanner').style.display = 'block';
   }
@@ -1694,7 +1721,32 @@ async function addUser(){
   if(res&&!res.error){document.getElementById('newUsername').value='';document.getElementById('newUserEmail').value='';document.getElementById('newPassword').value='';loadUsers();}
   else if(res)alert(res.error);
 }
-async function deleteUser(id){if(!confirm('Bu kullanıcıyı silmek istiyor musunuz?'))return;await api('/api/users/'+id,{method:'DELETE'});loadUsers();}
+async function deleteUser(id){
+  if(!confirm('Bu kullanıcıyı silmek istiyor musunuz?')) return;
+  const res = await api('/api/users/'+id, {method:'DELETE'});
+  if(!res) return;
+  if(res.error){ alert('Hata: '+res.error); return; }
+  loadUsers();
+}
+
+async function hesapSilOnay(){
+  const onay = confirm('⚠️ DİKKAT\n\nHesabınız ve sistemdeki tüm kişisel verileriniz kalıcı olarak silinecektir.\n\nBu işlem GERİ ALINAMAZ.\n\nDevam etmek istiyor musunuz?');
+  if(!onay) return;
+  const res = await api('/api/account', {method:'DELETE'});
+  if(!res) return;
+  if(res.error){ alert('Hata: '+res.error); return; }
+  // Tüm local verileri temizle ve çıkış yap
+  if(currentUser) localStorage.removeItem('yg_consented_'+currentUser.id);
+  localStorage.removeItem('yg_token');
+  localStorage.removeItem('yg_user');
+  localStorage.removeItem('yg_filters');
+  token=null; currentUser=null;
+  document.getElementById('app').style.display='none';
+  document.getElementById('authWrap').style.display='flex';
+  document.getElementById('hamburger').style.display='none';
+  showLogin();
+  alert('Hesabınız başarıyla silindi. Görüşmek üzere!');
+}
 
 // Kara liste
 async function loadBlacklist(){
