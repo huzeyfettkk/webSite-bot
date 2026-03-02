@@ -1458,6 +1458,8 @@ const dualOneriIdx = { nereden: -1, nereye: -1 };
 // ── Filtre localStorage ──────────────────────
 function saveSearchFilters(){
   localStorage.setItem('yg_filters', JSON.stringify({ nereden: dualState.nereden, nereye: dualState.nereye }));
+  // Bildirim aktifse push aboneliğini de güncelle (yeni filtreyi sunucuya kaydet)
+  if(bildirimAktif && seciliSehirler.length > 0) pushAboneOl(seciliSehirler).catch(()=>{});
 }
 function loadSearchFilters(){
   try{
@@ -1816,7 +1818,19 @@ async function pushAboneOl(sehirler){
       });
     }
     _pushSub = sub;
-    await api('/api/push/abone',{method:'POST',body:JSON.stringify({subscription:sub.toJSON(),sehirler})});
+    // Son filtreyi de gönder (nereden / nereye)
+    let nereden = [], nereye = [];
+    try {
+      const f = JSON.parse(localStorage.getItem('yg_filters') || '{}');
+      if(Array.isArray(f.nereden)) nereden = f.nereden;
+      if(Array.isArray(f.nereye))  nereye  = f.nereye;
+    } catch {}
+    await api('/api/push/abone',{method:'POST',body:JSON.stringify({
+      subscription: sub.toJSON(),
+      sehirler,
+      nereden,
+      nereye,
+    })});
   }catch(e){ console.warn('Push abonelik hatası:',e); }
 }
 

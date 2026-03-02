@@ -89,6 +89,15 @@ const _normPush = s => String(s || '')
   .replace(/Ş/g,'s').replace(/ş/g,'s').replace(/Ö/g,'o').replace(/ö/g,'o')
   .replace(/Ç/g,'c').replace(/ç/g,'c').toLowerCase();
 
+// Kelime sınırı eşleştirme — "van" artık "avantaj" içinde eşleşmez
+function _kelimeEslesti(metin, sehir) {
+  if (!sehir) return false;
+  try {
+    const esc = sehir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('\\b' + esc + '\\b').test(metin);
+  } catch { return false; }
+}
+
 async function gonderPushBildirim({ text, hash, cities = [] }) {
   let aboneler;
   try { aboneler = tumPushAboneler(); } catch { return; }
@@ -97,14 +106,39 @@ async function gonderPushBildirim({ text, hash, cities = [] }) {
   const normMetin = _normPush(text);
 
   for (const abone of aboneler) {
-    let sehirler = [];
+    let sehirler = [], nereden = [], nereye = [];
     try { sehirler = JSON.parse(abone.sehirler); } catch {}
-    const eslesme = sehirler.find(s => normMetin.includes(_normPush(s)));
-    if (!eslesme) continue;
+    try { nereden  = JSON.parse(abone.nereden);  } catch {}
+    try { nereye   = JSON.parse(abone.nereye);   } catch {}
+
+    // 1. Bildirim şehirleri eşleşmesi (kelime sınırı ile — substring yok)
+    const sehirEslesti = sehirler.find(s => _kelimeEslesti(normMetin, _normPush(s)));
+
+    // 2. Son filtre eşleşmesi (nereden zorunlu, nereye opsiyonel)
+    let filterEtiket = null;
+    if (!sehirEslesti && nereden.length > 0) {
+      const neredenNorm = nereden.map(_normPush);
+      const neredenMatch = neredenNorm.find(s => _kelimeEslesti(normMetin, s));
+      if (neredenMatch) {
+        if (nereye.length === 0) {
+          filterEtiket = nereden[neredenNorm.indexOf(neredenMatch)];
+        } else {
+          const nereyeNorm = nereye.map(_normPush);
+          const nereyeMatch = nereyeNorm.find(s => _kelimeEslesti(normMetin, s));
+          if (nereyeMatch) {
+            filterEtiket = nereden[neredenNorm.indexOf(neredenMatch)]
+              + ' → ' + nereye[nereyeNorm.indexOf(nereyeMatch)];
+          }
+        }
+      }
+    }
+
+    const eslesen = sehirEslesti || filterEtiket;
+    if (!eslesen) continue;
 
     const ozet  = (text || '').slice(0, 120);
     const baslik = '🚛 YükleGit — Yeni İlan';
-    const govde  = eslesme.charAt(0).toUpperCase() + eslesme.slice(1) + ': ' + ozet;
+    const govde  = String(eslesen).charAt(0).toUpperCase() + String(eslesen).slice(1) + ': ' + ozet;
     const tag    = 'ilan_' + (hash || Date.now());
 
     const deviceType = abone.device_type || 'web';
@@ -880,7 +914,7 @@ app.get('/api/push/vapid-key', (req, res) => {
 });
 
 app.post('/api/push/abone', authMiddleware, (req, res) => {
-  const { subscription, sehirler } = req.body;
+  const { subscription, sehirler, nereden, nereye } = req.body;
   if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth)
     return res.status(400).json({ error: 'Geçersiz abonelik verisi' });
   try {
@@ -890,6 +924,8 @@ app.post('/api/push/abone', authMiddleware, (req, res) => {
       p256dh:   subscription.keys.p256dh,
       auth:     subscription.keys.auth,
       sehirler: Array.isArray(sehirler) ? sehirler : [],
+      nereden:  Array.isArray(nereden)  ? nereden  : [],
+      nereye:   Array.isArray(nereye)   ? nereye   : [],
     });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: 'Abonelik kaydedilemedi' }); }

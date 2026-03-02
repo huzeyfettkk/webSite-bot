@@ -88,17 +88,28 @@ db.exec(`
     p256dh      TEXT    NOT NULL DEFAULT '',
     auth        TEXT    NOT NULL DEFAULT '',
     sehirler    TEXT    NOT NULL DEFAULT '[]',
+    nereden     TEXT    NOT NULL DEFAULT '[]',
+    nereye      TEXT    NOT NULL DEFAULT '[]',
     device_type TEXT    NOT NULL DEFAULT 'web',
     createdAt   TEXT    NOT NULL DEFAULT (datetime('now'))
   );
 `);
 
-// Migration: mevcut DB'de device_type kolonu yoksa ekle
+// Migration: mevcut DB'de eksik kolonları ekle
 try {
   const cols = db.prepare('PRAGMA table_info(push_subscriptions)').all();
-  if (!cols.find(c => c.name === 'device_type')) {
+  const colNames = cols.map(c => c.name);
+  if (!colNames.includes('device_type')) {
     db.exec("ALTER TABLE push_subscriptions ADD COLUMN device_type TEXT NOT NULL DEFAULT 'web'");
     console.log('🔄 push_subscriptions: device_type kolonu eklendi');
+  }
+  if (!colNames.includes('nereden')) {
+    db.exec("ALTER TABLE push_subscriptions ADD COLUMN nereden TEXT NOT NULL DEFAULT '[]'");
+    console.log('🔄 push_subscriptions: nereden kolonu eklendi');
+  }
+  if (!colNames.includes('nereye')) {
+    db.exec("ALTER TABLE push_subscriptions ADD COLUMN nereye TEXT NOT NULL DEFAULT '[]'");
+    console.log('🔄 push_subscriptions: nereye kolonu eklendi');
   }
 } catch (e) { /* zaten var */ }
 
@@ -400,15 +411,17 @@ function kullaniciSil(id) {
 // WEB PUSH ABONELİK FONKSİYONLARI
 // ══════════════════════════════════════════════
 
-function pushAboneEkle({ userId, endpoint, p256dh = '', auth = '', sehirler, device_type = 'web' }) {
+function pushAboneEkle({ userId, endpoint, p256dh = '', auth = '', sehirler, nereden, nereye, device_type = 'web' }) {
   db.prepare(`
-    INSERT INTO push_subscriptions (userId, endpoint, p256dh, auth, sehirler, device_type)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO push_subscriptions (userId, endpoint, p256dh, auth, sehirler, nereden, nereye, device_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(endpoint) DO UPDATE SET
       userId      = excluded.userId,
       p256dh      = excluded.p256dh,
       auth        = excluded.auth,
       sehirler    = excluded.sehirler,
+      nereden     = excluded.nereden,
+      nereye      = excluded.nereye,
       device_type = excluded.device_type
   `).run(
     userId,
@@ -416,6 +429,8 @@ function pushAboneEkle({ userId, endpoint, p256dh = '', auth = '', sehirler, dev
     p256dh,
     auth,
     JSON.stringify(Array.isArray(sehirler) ? sehirler : []),
+    JSON.stringify(Array.isArray(nereden)  ? nereden  : []),
+    JSON.stringify(Array.isArray(nereye)   ? nereye   : []),
     device_type,
   );
 }
