@@ -265,12 +265,12 @@ function ipWhitelist(req, res, next) {
 const _J = { tlds: { allow: false } }; // e-posta TLD doğrulamasını kapat (Türkçe domain uyumu)
 const S = {
   login:       Joi.object({ username: Joi.string().max(100).required(), password: Joi.string().max(200).required() }),
-  register:    Joi.object({ username: Joi.string().pattern(/^[a-zA-Z0-9_\-]+$/).min(3).max(50).required(), email: Joi.string().email(_J).max(200).required(), password: Joi.string().min(6).max(200).required(), phone: Joi.string().max(25).required() }),
+  register:    Joi.object({ username: Joi.string().pattern(/^[a-zA-Z0-9_\-ğüşıöçĞÜŞİÖÇ]+$/).min(3).max(50).required().messages({ 'string.pattern.base': 'Kullanıcı adı yalnızca harf, rakam, alt çizgi ve tire içerebilir', 'string.min': 'Kullanıcı adı en az 3 karakter olmalıdır', 'string.max': 'Kullanıcı adı en fazla 50 karakter olabilir', 'any.required': 'Kullanıcı adı zorunludur' }), email: Joi.string().email(_J).max(200).required().messages({ 'string.email': 'Geçerli bir e-posta adresi giriniz', 'any.required': 'E-posta zorunludur' }), password: Joi.string().min(6).max(200).required().messages({ 'string.min': 'Şifre en az 6 karakter olmalıdır', 'any.required': 'Şifre zorunludur' }), phone: Joi.string().max(25).required().messages({ 'any.required': 'Telefon numarası zorunludur' }) }),
   adminLogin:  Joi.object({ u: Joi.string().max(100).required(), p: Joi.string().max(200).required() }),
   ilanOlustur: Joi.object({ metin: Joi.string().min(1).max(1000).required() }),
   profile:     Joi.object({ email: Joi.string().email(_J).max(200).optional(), phone: Joi.string().max(25).optional().allow(''), currentPassword: Joi.string().max(200).optional(), newPassword: Joi.string().min(6).max(200).optional() }),
   blacklist:   Joi.object({ kelime: Joi.string().max(100).required() }),
-  userAdd:     Joi.object({ username: Joi.string().pattern(/^[a-zA-Z0-9_\-]+$/).min(3).max(50).required(), email: Joi.string().email(_J).max(200).optional().allow(''), password: Joi.string().min(6).max(200).required(), role: Joi.string().valid('user','admin').default('user') }),
+  userAdd:     Joi.object({ username: Joi.string().pattern(/^[a-zA-Z0-9_\-ğüşıöçĞÜŞİÖÇ]+$/).min(3).max(50).required().messages({ 'string.pattern.base': 'Kullanıcı adı yalnızca harf, rakam, alt çizgi ve tire içerebilir', 'string.min': 'Kullanıcı adı en az 3 karakter olmalıdır', 'string.max': 'Kullanıcı adı en fazla 50 karakter olabilir', 'any.required': 'Kullanıcı adı zorunludur' }), email: Joi.string().email(_J).max(200).optional().allow(''), password: Joi.string().min(6).max(200).required(), role: Joi.string().valid('user','admin').default('user') }),
   forgotPw:    Joi.object({ email: Joi.string().email(_J).max(200).required() }),
   resetPw:     Joi.object({ token: Joi.string().max(200).required(), password: Joi.string().min(6).max(200).required() }),
   botEkle:     Joi.object({ isim: Joi.string().max(100).required() }),

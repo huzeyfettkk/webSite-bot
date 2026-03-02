@@ -981,7 +981,13 @@ function closeSidebar(){
 function showReg(){['loginForm','forgotForm'].forEach(id=>document.getElementById(id).style.display='none');document.getElementById('regForm').style.display='block';}
 function showLogin(){['regForm','forgotForm'].forEach(id=>document.getElementById(id).style.display='none');document.getElementById('loginForm').style.display='block';}
 function showForgot(){['loginForm','regForm'].forEach(id=>document.getElementById(id).style.display='none');document.getElementById('forgotForm').style.display='block';}
-function googleLogin(){window.location.href='/auth/google';}
+function googleLogin(){
+  if(window.ReactNativeWebView){
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'GOOGLE_AUTH'}));
+  } else {
+    window.location.href='/auth/google';
+  }
+}
 
 async function login(){
   const username=document.getElementById('loginUser').value.trim();
