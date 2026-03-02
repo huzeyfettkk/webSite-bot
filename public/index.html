@@ -1007,7 +1007,6 @@ async function register(){
     const res=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,email,phone,password})});
     const data=await res.json();
     if(!res.ok)throw new Error(data.error);
-    if(data.needsVerification){okEl.textContent=data.message;okEl.style.display='block';return;}
     saveSession(data);initApp();
   }catch(e){errEl.textContent=e.message;errEl.style.display='block';}
 }
@@ -1060,7 +1059,7 @@ function _baslatApp(){
     if(_raw){const _f=JSON.parse(_raw);if(Array.isArray(_f.nereden))dualState.nereden=_f.nereden;if(Array.isArray(_f.nereye))dualState.nereye=_f.nereye;renderDualTags('nereden');renderDualTags('nereye');}
   }catch(e){}
   if(dualState.nereden.length||dualState.nereye.length) araIlanlar(); else loadIlanlar();
-  if(bildirimAktif && seciliSehirler.length>0) baslatBildirimKontrol();
+  if(bildirimAktif) baslatBildirimKontrol();
   // Bildirim kart durumunu güncelle
   setTimeout(loadProfilBildirim, 300);
   // Şehir önerileri için listeyi yükle (artık loadSearchFilters tetiklenmiyor — filtreler yukarıda uygulandı)
@@ -1090,9 +1089,20 @@ function showPage(page){
   if(page==='iletisim'){ /* statik sayfa, yükleme gerekmez */ }
 }
 
+let _logoutPending = false;
 async function api(url,opts={}){
   const res=await fetch(url,{...opts,headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,...(opts.headers||{})}});
-  if(res.status===401){logout();return null;}
+  if(res.status===401){
+    // Polling endpoint'lerinden gelen 401 anında logout yapmasın — önce token'ı doğrula
+    if(_logoutPending) return null;
+    _logoutPending = true;
+    try{
+      const chk = await fetch('/api/me',{headers:{'Authorization':'Bearer '+token}});
+      if(chk.status===401){ logout(); return null; }
+    }catch(e){ /* ağ hatası — logout yapma */ }
+    finally{ _logoutPending = false; }
+    return null;
+  }
   return res.json();
 }
 
@@ -1922,27 +1932,36 @@ function baslatBildirimKontrol(){
   if(!sonIlanTimestamp) sonIlanTimestamp = Date.now();
 
   bildirimInterval = setInterval(async ()=>{
-    if(!bildirimAktif || seciliSehirler.length === 0) return;
+    if(!bildirimAktif) return;
+    // Bildirim şehirleri + son filtre nereden şehirleri birleştir
+    let nereden = [];
+    try { const f=JSON.parse(localStorage.getItem('yg_filters')||'{}'); if(Array.isArray(f.nereden)) nereden=f.nereden; } catch {}
+    const tumSehirler = [...new Set([...seciliSehirler, ...nereden])];
+    if(tumSehirler.length === 0) return;
     try{
-      const sehirParam = encodeURIComponent(seciliSehirler.join(','));
+      const sehirParam = encodeURIComponent(tumSehirler.join(','));
       const data = await api('/api/ilanlar/yeni?since='+sonIlanTimestamp+'&sehirler='+sehirParam);
       if(!data) return;
-      // Sunucu zamanını referans al (saat farkı / senkronizasyon sorununu önler)
       if(data.serverTime) sonIlanTimestamp = data.serverTime;
       const yeniIlanlar = data.ilanlar || [];
+      if(!yeniIlanlar.length) return;
+      // iOS'ta new Notification() desteklenmiyor — service worker push yeterli
+      if(Notification.permission !== 'granted') return;
       for(const ilan of yeniIlanlar){
-        const sehirAdi = ilan.eslesenSehir
-          ? ilan.eslesenSehir.charAt(0).toUpperCase() + ilan.eslesenSehir.slice(1) + ': '
-          : '';
-        const ozet = ilan.text.length > 100 ? ilan.text.slice(0, 100) + '…' : ilan.text;
-        new Notification('🚛 YükleGit — Yeni İlan', {
-          body: sehirAdi + ozet,
-          icon: '/favicon.ico',
-          tag: 'ilan_' + ilan.hash,  // aynı ilan için çift bildirim önler
-        });
+        try{
+          const sehirAdi = ilan.eslesenSehir
+            ? ilan.eslesenSehir.charAt(0).toUpperCase()+ilan.eslesenSehir.slice(1)+': '
+            : '';
+          const ozet = ilan.text.length > 100 ? ilan.text.slice(0,100)+'…' : ilan.text;
+          new Notification('🚛 YükleGit — Yeni İlan', {
+            body: sehirAdi+ozet,
+            icon: '/favicon.ico',
+            tag: 'ilan_'+ilan.hash,
+          });
+        }catch(e){ /* iOS veya izin iptali — sessizce geç */ }
       }
     }catch(e){}
-  }, 15000); // 15 saniyede bir kontrol
+  }, 15000);
 }
 
 function durdurBildirimKontrol(){

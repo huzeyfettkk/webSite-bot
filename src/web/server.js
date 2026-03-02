@@ -148,10 +148,17 @@ async function gonderPushBildirim({ text, hash, cities = [] }) {
       if (!firebaseAdmin) continue;
       try {
         await firebaseAdmin.messaging().send({
-          token: abone.endpoint, // FCM registration token
+          token: abone.endpoint,
           notification: { title: baslik, body: govde },
           data: { tag, url: '/', hash: String(hash || '') },
-          android: { priority: 'high' },
+          android: {
+            priority: 'high',
+            notification: {
+              channelId: 'yuklegit_ilanlar', // Kotlin'de bu channel oluşturulmalı
+              icon: 'ic_notification',       // res/drawable içinde olmalı
+              sound: 'default',
+            },
+          },
         });
       } catch (e) {
         // Token geçersiz / kayıtlı değil
@@ -456,6 +463,11 @@ function adminMiddleware(req, res, next) {
 
 // ── Auth Rotaları ───────────────────────────────
 
+// Token geçerliliği kontrolü — frontend logout kararı için
+app.get('/api/me', authMiddleware, (req, res) => {
+  res.json({ id: req.user.id, username: req.user.username, role: req.user.role });
+});
+
 app.post('/api/login', validate(S.login), (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Bilgiler eksik' });
@@ -479,11 +491,11 @@ app.post('/api/register', validate(S.register), async (req, res) => {
   if (kullaniciBulUsername(username)) return res.status(400).json({ error: 'Bu kullanıcı adı zaten alınmış' });
   if (kullaniciBulEmail(email))       return res.status(400).json({ error: 'Bu e-posta zaten kayıtlı' });
 
-  const newId  = kullaniciEkle({ username, email, phone, password: bcrypt.hashSync(password, 12), role: 'user', verified: false });
-  const vToken = genToken();
-  _verifyTokens.set(vToken, { userId: newId, expires: Date.now() + 24*60*60*1000 });
-  try { await sendVerifyMail(email, username, vToken); } catch(e) { console.warn('Mail gönderilemedi:', e.message); }
-  res.json({ needsVerification: true, message: 'Kayıt başarılı! E-postanıza doğrulama linki gönderildi.' });
+  // verified: true — e-posta doğrulama adımı kaldırıldı (sürtünme azaltma)
+  const newId = kullaniciEkle({ username, email, phone, password: bcrypt.hashSync(password, 12), role: 'user', verified: true });
+  logEkle({ userId: newId, action: 'register', detail: username, ipAddress: getIP(req) });
+  const token = signJWT({ id: newId, username, email, role: 'user' }, { expiresIn: '30d' });
+  res.json({ token, user: { id: newId, username, email, role: 'user', phone } });
 });
 
 app.get('/verify', (req, res) => {
@@ -1037,13 +1049,27 @@ app.post('/api/ilan-olustur', authMiddleware, validate(S.ilanOlustur), (req, res
 // ── Google OAuth ────────────────────────────────
 app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
+// Mobil uygulama için — sistem tarayıcısından gelir, deep link'e yönlendirir
+app.get('/auth/google/mobile', (req, res, next) => {
+  req.session.oauthIsMobile = true;
+  next();
+}, passport.authenticate('google', { scope: ['profile', 'email'] }));
+
 app.get('/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/?error=google' }),
   (req, res) => {
     const user = req.user;
     logEkle({ userId: user.id, action: 'login', detail: 'google:' + user.username, ipAddress: getIP(req) });
     const token = signJWT({ id: user.id, username: user.username, email: user.email, role: user.role }, { expiresIn: '30d' });
-    res.redirect(`/?google_token=${token}&user=${encodeURIComponent(JSON.stringify({ id: user.id, username: user.username, email: user.email, phone: user.phone, role: user.role, avatar: user.avatar }))}`);
+    const userObj = { id: user.id, username: user.username, email: user.email, phone: user.phone, role: user.role, avatar: user.avatar };
+    const userEnc = encodeURIComponent(JSON.stringify(userObj));
+
+    if (req.session.oauthIsMobile) {
+      req.session.oauthIsMobile = false;
+      // Mobil: deep link ile uygulamaya dön
+      return res.redirect(`yuklegit://auth?google_token=${token}&user=${userEnc}`);
+    }
+    res.redirect(`/?google_token=${token}&user=${userEnc}`);
   }
 );
 
