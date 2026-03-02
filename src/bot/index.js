@@ -6,7 +6,7 @@ require('dotenv').config();
 
 const logger = require('../utils/bot-logger');
 const { Client, LocalAuth } = require('whatsapp-web.js');
-const { startServer } = require('../web/server');
+const { startServer, gonderPushBildirim } = require('../web/server');
 const { ilanEkle, ilanGuncelleEkle } = require('../database/db');
 const qrcode          = require('qrcode-terminal');
 const fs              = require('fs');
@@ -758,6 +758,7 @@ function botOlustur(clientId, isim) {
               try {
                 ilanGuncelleEkle({ contentHashStr, hash: String(hash), text: body, cities, chatName: kanalAdi, chatId: msg.from, senderPhone: '', timestamp });
                 logger.success('ILAN_SAVE', `İlan başarıyla kaydedildi`, { channel: kanalAdi, cities: cities.join(', '), textLength: body.length });
+                gonderPushBildirim({ text: body, hash: String(hash), cities }).catch(() => {});
               } catch (dbErr) {
                 logger.error('ILAN_SAVE', `İlan veritabanına kaydedilemedi`, dbErr, { channel: kanalAdi });
               }
@@ -921,6 +922,7 @@ function botOlustur(clientId, isim) {
           senderPhone,
           timestamp,
         });
+        gonderPushBildirim({ text: finalText, hash: String(hash), cities }).catch(() => {});
         console.log(`💾 [${clientId}] ${chat.name} | ${cities.join(', ')}`);
         if (isSamsunIlani(body)) samsunBildirimiGonder(client, { text: finalText, chatName: chat.name || 'Grup', timestamp });
       } else if (chat.isGroup) {

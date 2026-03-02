@@ -284,6 +284,20 @@ tr:hover td{background:#f8faff}
 .pwaBanner .pwaSub{font-size:12px;opacity:.85;margin-top:2px}
 .pwaBanner .pwaBtn{background:white;color:#1a5fdb;border:none;border-radius:10px;padding:8px 16px;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .pwaBanner .pwaClose{background:none;border:none;color:white;font-size:18px;cursor:pointer;opacity:.7;padding:0 0 0 8px;flex-shrink:0}
+/* iOS Add to Home Screen Bottom Sheet */
+.iosOverlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;animation:fadeInOv .3s ease}
+@keyframes fadeInOv{from{opacity:0}to{opacity:1}}
+.iosBanner{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-radius:20px 20px 0 0;box-shadow:0 -4px 30px rgba(0,0,0,.18);z-index:9999;padding:0 20px 34px;animation:slideUpIos .35s cubic-bezier(.32,1.15,.7,1)}
+@keyframes slideUpIos{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.iosBanner .iosHandle{width:40px;height:4px;background:#cbd5e1;border-radius:2px;margin:12px auto 18px}
+.iosBanner .iosTitle{font-weight:800;font-size:16px;text-align:center;margin-bottom:5px;color:var(--text)}
+.iosBanner .iosSub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:18px;line-height:1.45}
+.iosBanner .iosSteps{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
+.iosBanner .iosStep{display:flex;align-items:flex-start;gap:12px;background:var(--bg);border-radius:12px;padding:11px 14px}
+.iosBanner .iosNum{width:26px;height:26px;border-radius:50%;background:var(--accent);color:white;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.iosBanner .iosStepText{font-size:13px;color:var(--text);line-height:1.45}
+.iosBanner .iosStepText strong{color:var(--accent)}
+.iosBanner .iosCloseBtn{width:100%;padding:10px;background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;margin-top:2px}
 
 /* Bildirim ayarları */
 .sehirSecici{display:flex;flex-wrap:wrap;gap:8px;padding:16px 0}
@@ -1776,6 +1790,50 @@ let seciliSehirler = JSON.parse(localStorage.getItem('yg_bildirim_sehirler')||'[
 let bildirimAktif = localStorage.getItem('yg_bildirim_aktif') === 'true';
 let sonIlanTimestamp = 0;
 let bildirimInterval = null;
+let _pushSub = null; // aktif Web Push aboneliği
+
+// Base64 → Uint8Array (VAPID public key dönüşümü)
+function _b64ToUint8(b64){
+  const pad=b64+'='.repeat((4-b64.length%4)%4);
+  const raw=atob(pad.replace(/-/g,'+').replace(/_/g,'/'));
+  const arr=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+  return arr;
+}
+
+// Web Push aboneliğini al/oluştur ve sunucuya kaydet
+async function pushAboneOl(sehirler){
+  if(!('serviceWorker' in navigator)||!('PushManager' in window)) return;
+  try{
+    const keyData = await fetch('/api/push/vapid-key').then(r=>r.json());
+    if(!keyData.publicKey) return;
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub){
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: _b64ToUint8(keyData.publicKey),
+      });
+    }
+    _pushSub = sub;
+    await api('/api/push/abone',{method:'POST',body:JSON.stringify({subscription:sub.toJSON(),sehirler})});
+  }catch(e){ console.warn('Push abonelik hatası:',e); }
+}
+
+// Web Push aboneliğini iptal et
+async function pushAboneIptal(){
+  try{
+    let sub = _pushSub;
+    if(!sub && 'serviceWorker' in navigator){
+      const reg = await navigator.serviceWorker.ready;
+      sub = await reg.pushManager.getSubscription();
+    }
+    if(!sub) return;
+    await api('/api/push/abone',{method:'DELETE',body:JSON.stringify({endpoint:sub.endpoint})});
+    await sub.unsubscribe();
+    _pushSub = null;
+  }catch(e){ console.warn('Push iptal hatası:',e); }
+}
 
 function bildirimToggleChange(){
   const chk = document.getElementById('bildirimToggle');
@@ -1794,6 +1852,7 @@ function bildirimToggleChange(){
         if(kartText){ kartText.textContent = '✅ Açık'; kartText.style.color = '#16a34a'; }
         renderSehirChipler();
         baslatBildirimKontrol();
+        pushAboneOl(seciliSehirler); // Web Push aboneliği kur
       } else {
         chk.checked = false;
         if(document.getElementById('bildirimDurum')) document.getElementById('bildirimDurum').textContent = '⚠️ Tarayıcıdan izin vermeniz gerekiyor';
@@ -1807,6 +1866,7 @@ function bildirimToggleChange(){
     if(document.getElementById('bildirimDurum')) document.getElementById('bildirimDurum').textContent = 'Takip ettiğiniz illerde ilan gelince bildirim alın (il seçince tüm ilçeleri kapsar)';
     if(kartText){ kartText.textContent = 'Kapalı'; kartText.style.color = 'var(--text)'; }
     durdurBildirimKontrol();
+    pushAboneIptal(); // Web Push aboneliğini iptal et
   }
 }
 
@@ -1833,6 +1893,8 @@ function sehirToggle(sehir){
   localStorage.setItem('yg_bildirim_sehirler', JSON.stringify(seciliSehirler));
   const filtre = document.getElementById('bildirimSehirAra')?.value || '';
   renderSehirChipler(filtre);
+  // Push aboneliğini yeni şehir listesiyle güncelle
+  if(bildirimAktif) pushAboneOl(seciliSehirler);
 }
 
 function sehirFiltrele(){
@@ -1842,51 +1904,31 @@ function sehirFiltrele(){
 
 function baslatBildirimKontrol(){
   if(bildirimInterval) return;
+  // İlk başlatmada şu anki zamanı referans al — önceki ilanlar bildirim üretmez
+  if(!sonIlanTimestamp) sonIlanTimestamp = Date.now();
+
   bildirimInterval = setInterval(async ()=>{
-    if(!bildirimAktif || seciliSehirler.length===0) return;
+    if(!bildirimAktif || seciliSehirler.length === 0) return;
     try{
-      const data = await api('/api/ilanlar');
+      const sehirParam = encodeURIComponent(seciliSehirler.join(','));
+      const data = await api('/api/ilanlar/yeni?since='+sonIlanTimestamp+'&sehirler='+sehirParam);
       if(!data) return;
-      const ilanlar = data.ilanlar || data;
-      // Yeni ilanları bul (son kontrolden sonra gelenler)
-      const yeniIlanlar = ilanlar.filter(i => i.timestamp > sonIlanTimestamp);
-      if(yeniIlanlar.length > 0) sonIlanTimestamp = Math.max(...ilanlar.map(i=>i.timestamp));
-      else if(sonIlanTimestamp === 0){ sonIlanTimestamp = Math.max(...ilanlar.map(i=>i.timestamp),0); return; }
-
-      // İl → ilçe haritası (frontend'de küçük özet)
-      const IL_ILCE_OZET = {
-        'istanbul':['adalar','arnavutköy','ataşehir','avcılar','bağcılar','bahçelievler','bakırköy','başakşehir','bayrampaşa','beşiktaş','beykoz','beylikdüzü','beyoğlu','büyükçekmece','çatalca','çekmeköy','esenler','esenyurt','eyüpsultan','fatih','gaziosmanpaşa','güngören','kadıköy','kağıthane','kartal','küçükçekmece','maltepe','pendik','sancaktepe','sarıyer','silivri','sultanbeyli','sultangazi','şile','şişli','tuzla','ümraniye','üsküdar','zeytinburnu'],
-        'ankara':['altındağ','çankaya','etimesgut','keçiören','mamak','sincan','yenimahalle','pursaklar','gölbaşı','polatlı'],
-        'izmir':['balçova','bayındır','bayraklı','bergama','bornova','buca','çeşme','çiğli','dikili','foça','gaziemir','güzelbahçe','karabağlar','karşıyaka','kemalpaşa','konak','menemen','narlıdere','torbalı','urla'],
-        'bursa':['nilüfer','osmangazi','yıldırım','gemlik','inegöl','mudanya','orhangazi'],
-        'antalya':['kepez','konyaaltı','muratpaşa','alanya','manavgat','serik'],
-        'samsun':['atakum','canik','ilkadım','tekkeköy','bafra','çarşamba','terme','alaçam','havza','kavak','ondokuzmayıs'],
-        'kocaeli':['başiskele','çayırova','darıca','derince','gebze','gölcük','izmit','kandıra','kartepe','körfez'],
-        'sakarya':['adapazarı','akyazı','erenler','hendek','sapanca','serdivan'],
-      };
-
-      const normIl = s => s.toLowerCase().replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ş/g,'s').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ç/g,'c').replace(/İ/g,'i');
-
+      // Sunucu zamanını referans al (saat farkı / senkronizasyon sorununu önler)
+      if(data.serverTime) sonIlanTimestamp = data.serverTime;
+      const yeniIlanlar = data.ilanlar || [];
       for(const ilan of yeniIlanlar){
-        const normMetin = ' ' + normIl(ilan.text) + ' ';
-        const eslesme = seciliSehirler.find(il => {
-          const ns = normIl(il);
-          // İlin kendisi geçiyor mu?
-          if(normMetin.includes(' '+ns+' ')) return true;
-          // İlin ilçelerinden biri geçiyor mu?
-          const ilceler = IL_ILCE_OZET[il] || [];
-          return ilceler.some(ilce => normMetin.includes(' '+normIl(ilce)+' '));
+        const sehirAdi = ilan.eslesenSehir
+          ? ilan.eslesenSehir.charAt(0).toUpperCase() + ilan.eslesenSehir.slice(1) + ': '
+          : '';
+        const ozet = ilan.text.length > 100 ? ilan.text.slice(0, 100) + '…' : ilan.text;
+        new Notification('🚛 YükleGit — Yeni İlan', {
+          body: sehirAdi + ozet,
+          icon: '/favicon.ico',
+          tag: 'ilan_' + ilan.hash,  // aynı ilan için çift bildirim önler
         });
-        if(eslesme){
-          new Notification('🚛 YükleGit — Yeni İlan', {
-            body: eslesme.charAt(0).toUpperCase()+eslesme.slice(1)+' ilanı: '+ilan.text.slice(0,80)+'...',
-            icon: '/favicon.ico',
-            tag: 'ilan_'+ilan.timestamp,
-          });
-        }
       }
     }catch(e){}
-  }, 20000); // 20 saniyede bir kontrol
+  }, 15000); // 15 saniyede bir kontrol
 }
 
 function durdurBildirimKontrol(){
@@ -1905,6 +1947,8 @@ function loadProfilBildirim(){
     if(document.getElementById('bildirimDurum')) document.getElementById('bildirimDurum').textContent = '✅ Bildirimler aktif';
     if(kartText){ kartText.textContent = '✅ Açık'; kartText.style.color = '#16a34a'; }
     renderSehirChipler();
+    // Sayfa yenilendiğinde mevcut aboneliği sunucuyla senkronize et
+    pushAboneOl(seciliSehirler);
   } else {
     if(kartText){ kartText.textContent = 'Kapalı'; kartText.style.color = 'var(--text)'; }
   }
@@ -2167,7 +2211,7 @@ if(token&&currentUser){initApp();}
       if(_pwaPrompt){
         pwaInstall();
       } else if(isIOS){
-        alert('📲 iPhone/iPad\'e kurmak için:\n\nSafari\'de alttaki "Paylaş" butonuna (□↑) tıklayın\n→ "Ana Ekrana Ekle" seçin\n→ "Ekle" ye basın');
+        iosGoster();
       } else {
         alert('📲 Telefona kurmak için:\n\nTarayıcı menüsünden (⋮)\n"Ana ekrana ekle" veya\n"Uygulamayı yükle" seçeneğini tıklayın');
       }
@@ -2178,19 +2222,63 @@ if(token&&currentUser){initApp();}
       localStorage.setItem('yg_pwa_dismissed', '1');
     }
 
-    // iOS banner
-    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    const isStandalone = window.navigator.standalone;
-    if(isIOS && !isStandalone && !localStorage.getItem('yg_pwa_dismissed')){
+    // iOS Add to Home Screen
+    function iosGoster(){
+      const isChromeIOS = /CriOS/i.test(navigator.userAgent);
+      const subEl   = document.getElementById('iosSub');
+      const stepsEl = document.getElementById('iosSteps');
+      if(isChromeIOS){
+        if(subEl)   subEl.textContent = 'Bildirimleri alabilmek için bu sayfayı Safari\'de açın.';
+        if(stepsEl) stepsEl.innerHTML =
+          '<div class="iosStep"><div class="iosNum">1</div><div class="iosStepText">Alttaki <strong>Paylaş</strong> butonuna (⊡↑) dokunun</div></div>' +
+          '<div class="iosStep"><div class="iosNum">2</div><div class="iosStepText"><strong>Safari\'de Aç</strong> seçeneğine dokunun</div></div>' +
+          '<div class="iosStep"><div class="iosNum">3</div><div class="iosStepText">Safari\'de <strong>Paylaş → Ana Ekrana Ekle</strong> yapın</div></div>';
+      }
+      document.getElementById('iosOverlay').style.display = 'block';
+      document.getElementById('iosBanner').style.display  = 'block';
+    }
+    function iosDismiss(){
+      document.getElementById('iosOverlay').style.display = 'none';
+      document.getElementById('iosBanner').style.display  = 'none';
+      localStorage.setItem('yg_ios_dismissed', String(Date.now() + 3*24*60*60*1000));
+    }
+
+    // iOS otomatik gösterim (login sonrası 2.5s gecikme, 3 günde bir)
+    (function(){
+      const _isIOS       = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      const _isStandalone= window.navigator.standalone || window.matchMedia('(display-mode:standalone)').matches;
+      if(!_isIOS || _isStandalone) return;
+      const _exp = Number(localStorage.getItem('yg_ios_dismissed') || 0);
+      if(Date.now() < _exp) return;
       setTimeout(() => {
         if(!localStorage.getItem('yg_token')) return;
-        const b = document.getElementById('pwaBanner');
-        b.querySelector('.pwaSub').textContent = 'Safari\'de "Paylaş" → "Ana Ekrana Ekle"';
-        b.querySelector('.pwaBtn').style.display = 'none';
-        b.style.display = 'flex';
-      }, 2000);
-    }
+        iosGoster();
+      }, 2500);
+    })();
   </script>
+
+<!-- ── iOS Ana Ekrana Ekle Banner ────────────────── -->
+<div id="iosOverlay" class="iosOverlay" style="display:none" onclick="iosDismiss()"></div>
+<div id="iosBanner"  class="iosBanner"  style="display:none">
+  <div class="iosHandle"></div>
+  <div class="iosTitle">📲 Ana Ekrana Ekle</div>
+  <div id="iosSub" class="iosSub">Bildirimleri alabilmek için uygulamayı ana ekranınıza ekleyin — ücretsiz ve hızlı!</div>
+  <div id="iosSteps" class="iosSteps">
+    <div class="iosStep">
+      <div class="iosNum">1</div>
+      <div class="iosStepText">Safari'nin alt çubuğundaki <strong>Paylaş</strong> butonuna (⬡↑) dokunun</div>
+    </div>
+    <div class="iosStep">
+      <div class="iosNum">2</div>
+      <div class="iosStepText">Açılan listede <strong>"Ana Ekrana Ekle"</strong> seçeneğine dokunun</div>
+    </div>
+    <div class="iosStep">
+      <div class="iosNum">3</div>
+      <div class="iosStepText">Sağ üstteki <strong>"Ekle"</strong> butonuna dokunun — hazır! 🎉</div>
+    </div>
+  </div>
+  <button class="iosCloseBtn" onclick="iosDismiss()">Şimdi değil</button>
+</div>
 
 <!-- ── KVKK Rıza Modalı ─────────────────────────── -->
 <div id="rizaModal" class="rizaOverlay" style="display:none">

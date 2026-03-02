@@ -80,7 +80,27 @@ db.exec(`
     ipAddress   TEXT    NOT NULL DEFAULT '',
     consentedAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
   );
+
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId      INTEGER NOT NULL,
+    endpoint    TEXT    NOT NULL UNIQUE,
+    p256dh      TEXT    NOT NULL DEFAULT '',
+    auth        TEXT    NOT NULL DEFAULT '',
+    sehirler    TEXT    NOT NULL DEFAULT '[]',
+    device_type TEXT    NOT NULL DEFAULT 'web',
+    createdAt   TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
 `);
+
+// Migration: mevcut DB'de device_type kolonu yoksa ekle
+try {
+  const cols = db.prepare('PRAGMA table_info(push_subscriptions)').all();
+  if (!cols.find(c => c.name === 'device_type')) {
+    db.exec("ALTER TABLE push_subscriptions ADD COLUMN device_type TEXT NOT NULL DEFAULT 'web'");
+    console.log('🔄 push_subscriptions: device_type kolonu eklendi');
+  }
+} catch (e) { /* zaten var */ }
 
 // ── Admin yoksa oluştur ─────────────────────────
 const bcrypt = require('bcryptjs');
@@ -370,9 +390,42 @@ function tumKullanicilar() {
 }
 
 function kullaniciSil(id) {
+  db.prepare('DELETE FROM push_subscriptions WHERE userId = ?').run(id);
   db.prepare('DELETE FROM consents WHERE userId = ?').run(id);
   db.prepare('DELETE FROM logs WHERE userId = ?').run(id);
   db.prepare('DELETE FROM users WHERE id = ?').run(id);
+}
+
+// ══════════════════════════════════════════════
+// WEB PUSH ABONELİK FONKSİYONLARI
+// ══════════════════════════════════════════════
+
+function pushAboneEkle({ userId, endpoint, p256dh = '', auth = '', sehirler, device_type = 'web' }) {
+  db.prepare(`
+    INSERT INTO push_subscriptions (userId, endpoint, p256dh, auth, sehirler, device_type)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(endpoint) DO UPDATE SET
+      userId      = excluded.userId,
+      p256dh      = excluded.p256dh,
+      auth        = excluded.auth,
+      sehirler    = excluded.sehirler,
+      device_type = excluded.device_type
+  `).run(
+    userId,
+    endpoint,
+    p256dh,
+    auth,
+    JSON.stringify(Array.isArray(sehirler) ? sehirler : []),
+    device_type,
+  );
+}
+
+function pushAboneSil(endpoint) {
+  db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint);
+}
+
+function tumPushAboneler() {
+  return db.prepare('SELECT * FROM push_subscriptions').all();
 }
 
 // ══════════════════════════════════════════════
@@ -484,4 +537,6 @@ module.exports = {
   botEkle, botGuncelle, botSil, tumBotlar, botBul,
   // Rıza
   rizaKaydet, rizaVarMi,
+  // Push Abonelik
+  pushAboneEkle, pushAboneSil, tumPushAboneler,
 };

@@ -5,6 +5,7 @@ require('dotenv').config();
 
 const express        = require('express');
 const https          = require('https');
+const fs             = require('fs');
 const { getIlVeIlceleri, getIlBilgisi, IL_ILCE } = require('../config/il_ilce');
 const jwt            = require('jsonwebtoken');
 const bcrypt         = require('bcryptjs');
@@ -25,7 +26,124 @@ const {
   logEkle, loglariGetir,
   botEkle, botGuncelle, botSil, tumBotlar, botBul,
   rizaKaydet, rizaVarMi,
+  pushAboneEkle, pushAboneSil, tumPushAboneler,
 } = require('../database/db');
+
+// ── Web Push (VAPID) — Firebase gerekmez ────────────────
+let webpush = null;
+let VAPID_PUBLIC  = '';
+let VAPID_PRIVATE = '';
+const VAPID_EMAIL = 'mailto:admin@yuklegit.tr';
+const VAPID_FILE  = path.join(__dirname, '../../.vapid');
+try {
+  webpush = require('web-push');
+  if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY;
+    VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
+  } else {
+    try {
+      const saved = JSON.parse(fs.readFileSync(VAPID_FILE, 'utf8'));
+      VAPID_PUBLIC  = saved.publicKey;
+      VAPID_PRIVATE = saved.privateKey;
+    } catch {
+      const keys    = webpush.generateVAPIDKeys();
+      VAPID_PUBLIC  = keys.publicKey;
+      VAPID_PRIVATE = keys.privateKey;
+      fs.writeFileSync(VAPID_FILE, JSON.stringify(keys));
+      console.log('🔑 VAPID anahtarları oluşturuldu (.vapid dosyasına kaydedildi)');
+    }
+  }
+  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
+  console.log('✅ Web Push (VAPID) hazır');
+} catch (e) {
+  console.warn('⚠️  web-push paketi yok — "npm install web-push" çalıştırın:', e.message);
+}
+
+// ── Firebase Admin (FCM — Android Native) ───────────────
+let firebaseAdmin = null;
+try {
+  firebaseAdmin = require('firebase-admin');
+  // Önce env değişkeni (JSON string), sonra dosya yolu, sonra Application Default Credentials
+  let credential;
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    credential = firebaseAdmin.credential.cert(sa);
+  } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    credential = firebaseAdmin.credential.cert(require(path.resolve(process.env.FIREBASE_SERVICE_ACCOUNT)));
+  } else {
+    credential = firebaseAdmin.credential.applicationDefault();
+  }
+  if (!firebaseAdmin.apps.length) {
+    firebaseAdmin.initializeApp({ credential });
+  }
+  console.log('✅ Firebase Admin (FCM) hazır');
+} catch (e) {
+  console.warn('⚠️  firebase-admin yok veya yapılandırılmamış — Android push devre dışı:', e.message);
+  firebaseAdmin = null;
+}
+
+// Normalize (push eşleştirme için)
+const _normPush = s => String(s || '')
+  .replace(/İ/g,'i').replace(/I/g,'i').replace(/ı/g,'i')
+  .replace(/Ğ/g,'g').replace(/ğ/g,'g').replace(/Ü/g,'u').replace(/ü/g,'u')
+  .replace(/Ş/g,'s').replace(/ş/g,'s').replace(/Ö/g,'o').replace(/ö/g,'o')
+  .replace(/Ç/g,'c').replace(/ç/g,'c').toLowerCase();
+
+async function gonderPushBildirim({ text, hash, cities = [] }) {
+  let aboneler;
+  try { aboneler = tumPushAboneler(); } catch { return; }
+  if (!aboneler.length) return;
+
+  const normMetin = _normPush(text);
+
+  for (const abone of aboneler) {
+    let sehirler = [];
+    try { sehirler = JSON.parse(abone.sehirler); } catch {}
+    const eslesme = sehirler.find(s => normMetin.includes(_normPush(s)));
+    if (!eslesme) continue;
+
+    const ozet  = (text || '').slice(0, 120);
+    const baslik = '🚛 YükleGit — Yeni İlan';
+    const govde  = eslesme.charAt(0).toUpperCase() + eslesme.slice(1) + ': ' + ozet;
+    const tag    = 'ilan_' + (hash || Date.now());
+
+    const deviceType = abone.device_type || 'web';
+
+    // ── Android Native → Firebase Cloud Messaging ──
+    if (deviceType === 'android_native') {
+      if (!firebaseAdmin) continue;
+      try {
+        await firebaseAdmin.messaging().send({
+          token: abone.endpoint, // FCM registration token
+          notification: { title: baslik, body: govde },
+          data: { tag, url: '/', hash: String(hash || '') },
+          android: { priority: 'high' },
+        });
+      } catch (e) {
+        // Token geçersiz / kayıtlı değil
+        if (e.code === 'messaging/registration-token-not-registered' ||
+            e.code === 'messaging/invalid-registration-token') {
+          try { pushAboneSil(abone.endpoint); } catch {}
+        }
+      }
+      continue;
+    }
+
+    // ── iOS / Desktop → Web Push (VAPID) ──
+    if (!webpush || !VAPID_PUBLIC) continue;
+    try {
+      await webpush.sendNotification(
+        { endpoint: abone.endpoint, keys: { p256dh: abone.p256dh, auth: abone.auth } },
+        JSON.stringify({ title: baslik, body: govde, tag, url: '/' }),
+        { TTL: 3600 }
+      );
+    } catch (e) {
+      if (e.statusCode === 410 || e.statusCode === 404) {
+        try { pushAboneSil(abone.endpoint); } catch {}
+      }
+    }
+  }
+}
 
 const app    = express();
 const helmet = require('helmet');
@@ -756,6 +874,86 @@ app.get('/api/ilanlar', authMiddleware, (req, res) => {
   res.json({ ilanlar, matchedTerms });
 });
 
+// ── Web Push Abonelik Endpoint'leri ─────────────
+app.get('/api/push/vapid-key', (req, res) => {
+  res.json({ publicKey: VAPID_PUBLIC || '' });
+});
+
+app.post('/api/push/abone', authMiddleware, (req, res) => {
+  const { subscription, sehirler } = req.body;
+  if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth)
+    return res.status(400).json({ error: 'Geçersiz abonelik verisi' });
+  try {
+    pushAboneEkle({
+      userId:   req.user.id,
+      endpoint: subscription.endpoint,
+      p256dh:   subscription.keys.p256dh,
+      auth:     subscription.keys.auth,
+      sehirler: Array.isArray(sehirler) ? sehirler : [],
+    });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Abonelik kaydedilemedi' }); }
+});
+
+app.delete('/api/push/abone', authMiddleware, (req, res) => {
+  const { endpoint } = req.body;
+  if (endpoint) try { pushAboneSil(endpoint); } catch {}
+  res.json({ ok: true });
+});
+
+// ── Android Native: FCM Token Kayıt/Güncelle ────────────
+// Kotlin uygulaması her başlangıçta bu endpoint'e FCM token gönderir
+app.post('/api/push/fcm-token', authMiddleware, (req, res) => {
+  const { fcmToken, sehirler } = req.body;
+  if (!fcmToken || typeof fcmToken !== 'string' || fcmToken.length < 10)
+    return res.status(400).json({ error: 'Geçersiz FCM token' });
+  try {
+    pushAboneEkle({
+      userId:      req.user.id,
+      endpoint:    fcmToken,          // FCM token = unique ID olarak saklanır
+      p256dh:      '',
+      auth:        '',
+      sehirler:    Array.isArray(sehirler) ? sehirler : [],
+      device_type: 'android_native',
+    });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'FCM token kaydedilemedi' }); }
+});
+
+// ── Bildirim: Yeni İlanlar (since + şehir listesi) ──
+app.get('/api/ilanlar/yeni', authMiddleware, (req, res) => {
+  const since   = parseInt(req.query.since) || 0;
+  const sehirler = String(req.query.sehirler || '')
+    .split(',').map(s => s.trim()).filter(Boolean).slice(0, 30);
+
+  if (!sehirler.length) return res.json({ ilanlar: [], serverTime: Date.now() });
+
+  const seen  = new Set();
+  const sonuc = [];
+
+  for (const sehir of sehirler) {
+    const bulunan = sehirBul(sehir);
+    if (!bulunan) continue;
+    const ilceler = getIlVeIlceleri(bulunan);
+    const eslesme = ilanAra(bulunan, null, ilceler, []);
+    for (const r of eslesme) {
+      if (r.timestamp > since && !seen.has(r.hash)) {
+        seen.add(r.hash);
+        sonuc.push({
+          hash:      r.hash,
+          text:      r.text,
+          timestamp: r.timestamp,
+          cities:    (() => { try { return JSON.parse(r.cities); } catch { return []; } })(),
+          eslesenSehir: bulunan,
+        });
+      }
+    }
+  }
+
+  sonuc.sort((a, b) => b.timestamp - a.timestamp);
+  res.json({ ilanlar: sonuc, serverTime: Date.now() });
+});
+
 app.get('/api/stats', authMiddleware, (req, res) => {
   res.json({ total: ilanSayisi(), botDurumu: _store ? 'Çalışıyor' : 'Başlatılıyor', ttlDakika: _config ? _config.TTL_MS / 60000 : 60 });
 });
@@ -1023,4 +1221,4 @@ function startServer(store, config, botManager, botOlustur, botDurdur, qrWaiters
   app.listen(PORT, () => console.log(`🌐 YükleGit paneli: http://localhost:${PORT}`));
 }
 
-module.exports = { startServer };
+module.exports = { startServer, gonderPushBildirim };
