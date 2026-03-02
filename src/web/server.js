@@ -1064,12 +1064,10 @@ app.get('/auth/google/callback',
     const userObj = { id: user.id, username: user.username, email: user.email, phone: user.phone, role: user.role, avatar: user.avatar };
     const userEnc = encodeURIComponent(JSON.stringify(userObj));
 
-    if (req.session.oauthIsMobile) {
-      req.session.oauthIsMobile = false;
-      // Mobil: deep link ile uygulamaya dön
-      return res.redirect(`yuklegit://auth?google_token=${token}&user=${userEnc}`);
-    }
-    res.redirect(`/?google_token=${token}&user=${userEnc}`);
+    // Önce deep link dene (native app), 1.5s sonra web URL'e geç (tarayıcı)
+    const deepLink = `yuklegit://auth?google_token=${token}&user=${userEnc}`;
+    const webLink = `/?google_token=${token}&user=${userEnc}`;
+    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Giriş yapılıyor...</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#1a56db;color:#fff;flex-direction:column;gap:16px}</style></head><body><p>Uygulamaya yönlendiriliyor...</p><script>window.location.href=${JSON.stringify(deepLink)};setTimeout(function(){window.location.href=${JSON.stringify(webLink)};},1500);</script></body></html>`);
   }
 );
 
